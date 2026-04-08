@@ -362,3 +362,65 @@ describe('Environment convenience API', () => {
     assert.equal(env.run('answer'), 42n)
   })
 })
+
+describe('Environment — end-to-end', () => {
+  it('real-world use case: authorization policy', () => {
+    const env = new Environment()
+      .registerVariable('user', 'map')
+      .registerVariable('resource', 'map')
+      .registerConstant('minAge', 'int', 18n)
+      .registerFunction('hasRole', 2, (user, role) => {
+        if (!user || !Array.isArray(user.roles)) return false
+        return user.roles.includes(role)
+      })
+
+    const policy = 'user.age >= minAge && hasRole(user, "admin")'
+    const bytecode = env.compile(policy)
+
+    const allowed = env.evaluate(bytecode, {
+      user: { age: 25n, roles: ['admin', 'user'] },
+      resource: { type: 'document' },
+    })
+    assert.equal(allowed, true)
+
+    const denied = env.evaluate(bytecode, {
+      user: { age: 16n, roles: ['user'] },
+      resource: { type: 'document' },
+    })
+    assert.equal(denied, false)
+  })
+
+  it('real-world use case: string formatting with custom methods', () => {
+    const env = new Environment()
+      .registerMethod('titleCase', 0, (s) => {
+        return s.replace(/\b\w/g, c => c.toUpperCase())
+      })
+
+    assert.equal(
+      env.run('"hello world".titleCase()', {}),
+      'Hello World'
+    )
+  })
+
+  it('real-world use case: math extensions', () => {
+    const env = new Environment()
+      .registerFunction('clamp', 3, (val, lo, hi) => {
+        if (val < lo) return lo
+        if (val > hi) return hi
+        return val
+      })
+
+    assert.equal(env.run('clamp(x, 0, 100)', { x: 150n }), 100n)
+    assert.equal(env.run('clamp(x, 0, 100)', { x: -5n }), 0n)
+    assert.equal(env.run('clamp(x, 0, 100)', { x: 50n }), 50n)
+  })
+
+  it('bytecode portability: same bytecode, different activations', () => {
+    const env = new Environment()
+      .registerFunction('prefix', 2, (s, p) => p + s)
+
+    const bytecode = env.compile('prefix(name, "Dr. ")')
+    assert.equal(env.evaluate(bytecode, { name: 'Smith' }), 'Dr. Smith')
+    assert.equal(env.evaluate(bytecode, { name: 'Jones' }), 'Dr. Jones')
+  })
+})
