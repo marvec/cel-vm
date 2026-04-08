@@ -292,3 +292,46 @@ describe('Environment integration — custom methods', () => {
     assert.equal(evaluate(bytecode, {}, config.functionTable), true)
   })
 })
+
+describe('Environment integration — strict variable mode', () => {
+  it('allows declared variables', () => {
+    const env = new Environment()
+      .registerVariable('x', 'int')
+
+    const config = env.toConfig()
+    const bytecode = compile('x + 1', { env: config })
+    assert.equal(evaluate(bytecode, { x: 5n }), 6n)
+  })
+
+  it('rejects undeclared variables in strict mode', () => {
+    const env = new Environment()
+      .registerVariable('x', 'int')
+
+    const config = env.toConfig()
+    assert.throws(
+      () => compile('x + y', { env: config }),
+      (err) => err instanceof CompileError && err.message.includes('y')
+    )
+  })
+
+  it('permissive mode (no registerVariable calls) allows anything', () => {
+    const env = new Environment()
+      .registerConstant('c', 'int', 1n)
+
+    const config = env.toConfig()
+    // declaredVars is null → no checking
+    const bytecode = compile('x + c', { env: config })
+    assert.equal(evaluate(bytecode, { x: 2n }), 3n)
+  })
+
+  it('constants are allowed even when not declared as variables', () => {
+    const env = new Environment()
+      .registerVariable('x', 'int')
+      .registerConstant('limit', 'int', 100n)
+
+    const config = env.toConfig()
+    // 'limit' is a constant, not a variable — should still work
+    const bytecode = compile('x < limit', { env: config })
+    assert.equal(evaluate(bytecode, { x: 50n }), true)
+  })
+})

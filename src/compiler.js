@@ -212,6 +212,15 @@ export function compile(ast, options = {}) {
   const varTable = Array.from(varNameSet).sort()
   const varIndex = new Map(varTable.map((n, i) => [n, i]))
 
+  // ── 1b. Enforce strict variable declarations if env has declared vars ───
+  if (env && env.declaredVars) {
+    for (const name of varNameSet) {
+      if (!env.declaredVars.has(name) && !env.constants.has(name)) {
+        throw new CompileError(`Undeclared variable: '${name}'`)
+      }
+    }
+  }
+
   // ── 2. Constant pool ───────────────────────────────────────────────────────
   const consts = []
   const constIndex = new Map()   // key → index (deduplication)
