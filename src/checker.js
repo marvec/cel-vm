@@ -309,6 +309,20 @@ function walkNode(node) {
       return { ...node, object, index }
     }
 
+    // ── OptIndex — optional index access ────────────────────────────────
+    case 'OptIndex': {
+      const object = walkNode(node.object)
+      const index = walkNode(node.index)
+      if (object === node.object && index === node.index) return node
+      return { ...node, object, index }
+    }
+
+    // ── OptElement — optional list element ──────────────────────────────
+    case 'OptElement': {
+      const expr = walkNode(node.expr)
+      return expr === node.expr ? node : { ...node, expr }
+    }
+
     // ── Call (global function) — check for has() macro ─────────────────────
     case 'Call': {
       const expanded = tryExpandCallMacro(node)

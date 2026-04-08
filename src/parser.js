@@ -250,11 +250,18 @@ export function parse(tokens) {
         }
 
       } else if (check(TT.LBRACKET)) {
-        // Index access: obj[expr]
+        // Index access: obj[expr] or optional index: obj[?expr]
         advance()
-        const index = parseExpression()
-        expect(TT.RBRACKET, "expected ']' after index expression")
-        node = { type: 'Index', object: node, index }
+        if (check(TT.QUESTION)) {
+          advance()
+          const index = parseExpression()
+          expect(TT.RBRACKET, "expected ']' after optional index expression")
+          node = { type: 'OptIndex', object: node, index }
+        } else {
+          const index = parseExpression()
+          expect(TT.RBRACKET, "expected ']' after index expression")
+          node = { type: 'Index', object: node, index }
+        }
 
       } else {
         break
@@ -356,15 +363,25 @@ export function parse(tokens) {
         return node
       }
 
-      // List literal: [expr, ...]
+      // List literal: [expr, ...] or [?optExpr, ...]
       case TT.LBRACKET: {
         advance()
         const elements = []
         if (!check(TT.RBRACKET)) {
-          elements.push(parseExpression())
+          if (check(TT.QUESTION)) {
+            advance()
+            elements.push({ type: 'OptElement', expr: parseExpression() })
+          } else {
+            elements.push(parseExpression())
+          }
           while (match(TT.COMMA)) {
             if (check(TT.RBRACKET)) break  // trailing comma allowed
-            elements.push(parseExpression())
+            if (check(TT.QUESTION)) {
+              advance()
+              elements.push({ type: 'OptElement', expr: parseExpression() })
+            } else {
+              elements.push(parseExpression())
+            }
           }
         }
         expect(TT.RBRACKET, "expected ']' to close list literal")

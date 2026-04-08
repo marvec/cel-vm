@@ -345,7 +345,10 @@ export function tokenize(src) {
         if (src[pos] === '.') { pos++; col++; addToken(TT.OPT_DOT, undefined, tokLine, tokCol) }
         else { addToken(TT.QUESTION, undefined, tokLine, tokCol) }
         break
-      case '.': addToken(TT.DOT, undefined, tokLine, tokCol); break
+      case '.':
+        if (src[pos] === '?') { pos++; col++; addToken(TT.OPT_DOT, undefined, tokLine, tokCol) }
+        else { addToken(TT.DOT, undefined, tokLine, tokCol) }
+        break
       case '*':
         if (src[pos] === '*') { pos++; col++; addToken(TT.POWER, undefined, tokLine, tokCol) }
         else { addToken(TT.STAR, undefined, tokLine, tokCol) }

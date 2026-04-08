@@ -24,6 +24,7 @@ export const OP = {
   SELECT: 28, HAS_FIELD: 29, CALL: 30, SIZE: 31,
   ITER_INIT: 32, ITER_NEXT: 33, ITER_POP: 34, ACCUM_PUSH: 35, ACCUM_SET: 36,
   OPT_SELECT: 37, OPT_NONE: 38, OPT_OF: 39, OPT_OR_VALUE: 40, OPT_CHAIN: 41,
+  LOGICAL_AND: 42, LOGICAL_OR: 43, OPT_INDEX: 44, OPT_HAS_VALUE: 45, OPT_OF_NON_ZERO: 46,
 };
 
 // ---------------------------------------------------------------------------
@@ -71,7 +72,7 @@ const TAG_BYTES  = 6;
 //   3 = u16 + u8 (CALL only)
 // ---------------------------------------------------------------------------
 
-const OPERAND_WIDTH = new Uint8Array(42);
+const OPERAND_WIDTH = new Uint8Array(48);
 // 2-byte unsigned operands
 for (const op of [
   OP.PUSH_CONST, OP.LOAD_VAR, OP.SELECT, OP.HAS_FIELD,
@@ -94,7 +95,7 @@ OPERAND_WIDTH[OP.CALL] = 3;
 // Signed vs unsigned: which 2-byte operands are signed i16
 // ---------------------------------------------------------------------------
 
-const SIGNED_OPERAND = new Uint8Array(42);
+const SIGNED_OPERAND = new Uint8Array(48);
 for (const op of [
   OP.JUMP, OP.JUMP_IF_FALSE, OP.JUMP_IF_TRUE,
   OP.JUMP_IF_FALSE_K, OP.JUMP_IF_TRUE_K,
