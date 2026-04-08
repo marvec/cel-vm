@@ -1,0 +1,12 @@
+{
+  "name": "cel-vm",
+  "version": "0.1.0",
+  "description": "High-performance CEL evaluator using a bytecode VM",
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "test:lexer": "bun test test/lexer.test.js",
+    "bench": "bun run bench/compare.js"
+  },
+  "devDependencies": {}
+}
