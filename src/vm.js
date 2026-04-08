@@ -57,7 +57,6 @@ function celTypeName(v) {
   if (isTimestamp(v))         return 'google.protobuf.Timestamp'
   if (isDuration(v))          return 'google.protobuf.Duration'
   if (isOpt(v))              return 'optional'
-  if (v && v.__celType)      return v.name
   return 'unknown'
 }
 
@@ -231,12 +230,53 @@ function celIn(val, container) {
 }
 
 // ---------------------------------------------------------------------------
+// Unicode code-point helpers (cel-spec defines string ops in code points)
+// ---------------------------------------------------------------------------
+
+function codePointLen(s) {
+  let count = 0
+  for (let i = 0; i < s.length; ) {
+    const cp = s.codePointAt(i)
+    i += cp > 0xFFFF ? 2 : 1
+    count++
+  }
+  return count
+}
+
+function codePointCharAt(s, idx) {
+  let count = 0
+  for (let i = 0; i < s.length; ) {
+    if (count === idx) return String.fromCodePoint(s.codePointAt(i))
+    const cp = s.codePointAt(i)
+    i += cp > 0xFFFF ? 2 : 1
+    count++
+  }
+  return undefined
+}
+
+function codePointSubstring(s, start, end) {
+  const pts = [...s]
+  return pts.slice(start, end).join('')
+}
+
+function utf16OffsetToCodePoint(s, utf16Offset) {
+  if (utf16Offset < 0) return -1n
+  let cpIdx = 0
+  for (let i = 0; i < utf16Offset; ) {
+    const cp = s.codePointAt(i)
+    i += cp > 0xFFFF ? 2 : 1
+    cpIdx++
+  }
+  return BigInt(cpIdx)
+}
+
+// ---------------------------------------------------------------------------
 // size()
 // ---------------------------------------------------------------------------
 
 function celSize(v) {
   if (isError(v)) return v
-  if (isStr(v))   return BigInt(v.length)
+  if (isStr(v))   return BigInt(codePointLen(v))
   if (isList(v))  return BigInt(v.length)
   if (isMap(v))   return BigInt(v.size)
   if (isBytes(v)) return BigInt(v.length)
@@ -318,17 +358,17 @@ function callBuiltin(id, argc, stack, sp) {
       if (argc === 2) {
         const start = stack[sp]; const recv = stack[sp - 1]
         if (!isStr(recv)) return celError('substring() requires string receiver')
-        return recv.substring(Number(start))
+        return codePointSubstring(recv, Number(start))
       } else {
         const end = stack[sp]; const start = stack[sp - 1]; const recv = stack[sp - 2]
         if (!isStr(recv)) return celError('substring() requires string receiver')
-        return recv.substring(Number(start), Number(end))
+        return codePointSubstring(recv, Number(start), Number(end))
       }
     }
     case BUILTIN.STRING_INDEX_OF: {
       const sub = stack[sp]; const recv = stack[sp - 1]
       if (!isStr(recv) || !isStr(sub)) return celError('indexOf() requires strings')
-      return BigInt(recv.indexOf(sub))
+      return utf16OffsetToCodePoint(recv, recv.indexOf(sub))
     }
     case BUILTIN.STRING_SPLIT: {
       const sep = stack[sp]; const recv = stack[sp - 1]
@@ -379,7 +419,7 @@ function callBuiltin(id, argc, stack, sp) {
     case BUILTIN.STRING_LAST_INDEX_OF: {
       const sub = stack[sp]; const recv = stack[sp - 1]
       if (!isStr(recv) || !isStr(sub)) return celError('lastIndexOf() requires strings')
-      return BigInt(recv.lastIndexOf(sub))
+      return utf16OffsetToCodePoint(recv, recv.lastIndexOf(sub))
     }
     case BUILTIN.STRINGS_QUOTE: {
       const v = stack[sp]
@@ -997,8 +1037,9 @@ export function evaluate(program, activation) {
           if (!found) stack[sp] = celError(`no such key: '${idx}'`)
         } else if (isStr(obj)) {
           const i = typeof idx === 'bigint' ? Number(idx) : idx
-          if (i < 0 || i >= obj.length) { stack[sp] = celError(`index out of bounds: ${i}`); break }
-          stack[sp] = obj[i]
+          const len = codePointLen(obj)
+          if (i < 0 || i >= len) { stack[sp] = celError(`index out of bounds: ${i}`); break }
+          stack[sp] = codePointCharAt(obj, i)
         } else {
           stack[sp] = celError(`cannot index ${celTypeName(obj)}`)
         }

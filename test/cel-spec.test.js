@@ -481,34 +481,34 @@ describe('conversions', () => {
   })
 
   describe('type', () => {
-    it.skip('bool', () => assertCel('type(true)', 'bool'))
-    it.skip('bool_denotation', () => assertCel('bool', 'bool'))
-    it.skip('int', () => assertCel('type(0)', 'int'))
-    it.skip('int_denotation', () => assertCel('int', 'int'))
-    it.skip('eq_same', () => assertCel('type(true) == type(false)', true))
-    it.skip('uint', () => assertCel('type(64u)', 'uint'))
-    it.skip('uint_denotation', () => assertCel('uint', 'uint'))
-    it.skip('double', () => assertCel('type(3.14)', 'double'))
-    it.skip('double_denotation', () => assertCel('double', 'double'))
-    it.skip('null_type', () => assertCel('type(null)', 'null_type'))
-    it.skip('null_type_denotation', () => assertCel('null_type', 'null_type'))
-    it.skip('string', () => assertCel("type('foo')", 'string'))
-    it.skip('string_denotation', () => assertCel('string', 'string'))
-    it.skip('bytes', () => assertCel("type(b'\\xff')", 'bytes'))
-    it.skip('bytes_denotation', () => assertCel('bytes', 'bytes'))
-    it.skip('list', () => assertCel('type([1, 2, 3])', 'list'))
-    it.skip('list_denotation', () => assertCel('list', 'list'))
-    it.skip('lists_monomorphic', () => assertCel("type([1, 2, 3]) == type(['one', 'two', 'three'])", true))
-    it.skip('map', () => assertCel('type({4: 16})', 'map'))
-    it.skip('map_denotation', () => assertCel('map', 'map'))
-    it.skip('map_monomorphic', () => assertCel("type({'one': 1}) == type({1: 'one'})", true))
-    it.skip('eq_diff', () => assertCel('type(7) == type(7u)', false))
-    it.skip('neq_same', () => assertCel('type(0.0) != type(-0.0)', false))
-    it.skip('neq_diff', () => assertCel('type(0.0) != type(0)', true))
-    it.skip('meta', () => assertCel('type(type(7)) == type(type(7u))', true))
-    it.skip('type', () => assertCel('type(int)', 'type'))
-    it.skip('type_denotation', () => assertCel('type', 'type'))
-    it.skip('type_type', () => assertCel('type(type)', 'type'))
+    it('bool', () => assertCel('type(true)', 'bool'))
+    it.skip('bool_denotation - type identifiers not first-class values', () => assertCel('bool', 'bool'))
+    it('int', () => assertCel('type(0)', 'int'))
+    it.skip('int_denotation - type identifiers not first-class values', () => assertCel('int', 'int'))
+    it('eq_same', () => assertCel('type(true) == type(false)', true))
+    it.skip('uint - uint not distinct from int in type system', () => assertCel('type(64u)', 'uint'))
+    it.skip('uint_denotation - type identifiers not first-class values', () => assertCel('uint', 'uint'))
+    it('double', () => assertCel('type(3.14)', 'double'))
+    it.skip('double_denotation - type identifiers not first-class values', () => assertCel('double', 'double'))
+    it('null_type', () => assertCel('type(null)', 'null_type'))
+    it.skip('null_type_denotation - type identifiers not first-class values', () => assertCel('null_type', 'null_type'))
+    it('string', () => assertCel("type('foo')", 'string'))
+    it.skip('string_denotation - type identifiers not first-class values', () => assertCel('string', 'string'))
+    it('bytes', () => assertCel("type(b'\\xff')", 'bytes'))
+    it.skip('bytes_denotation - type identifiers not first-class values', () => assertCel('bytes', 'bytes'))
+    it('list', () => assertCel('type([1, 2, 3])', 'list'))
+    it.skip('list_denotation - type identifiers not first-class values', () => assertCel('list', 'list'))
+    it('lists_monomorphic', () => assertCel("type([1, 2, 3]) == type(['one', 'two', 'three'])", true))
+    it('map', () => assertCel('type({4: 16})', 'map'))
+    it.skip('map_denotation - type identifiers not first-class values', () => assertCel('map', 'map'))
+    it('map_monomorphic', () => assertCel("type({'one': 1}) == type({1: 'one'})", true))
+    it.skip('eq_diff - uint not distinct from int in type system', () => assertCel('type(7) == type(7u)', false))
+    it('neq_same', () => assertCel('type(0.0) != type(-0.0)', false))
+    it('neq_diff', () => assertCel('type(0.0) != type(0)', true))
+    it('meta', () => assertCel('type(type(7)) == type(type(7u))', true))
+    it.skip('type - type identifiers not first-class values', () => assertCel('type(int)', 'type'))
+    it.skip('type_denotation - type identifiers not first-class values', () => assertCel('type', 'type'))
+    it.skip('type_type - type identifiers not first-class values', () => assertCel('type(type)', 'type'))
   })
 
   describe('uint', () => {
@@ -845,6 +845,11 @@ describe('string', () => {
     it('one_unicode', () => assertCel("size('\u00ff')", 1n))
     it('ascii', () => assertCel("size('four')", 4n))
     it('unicode', () => assertCel("size('\u03c0\u03ad\u03bd\u03c4\u03b5')", 5n))
+    it('size_emoji', () => assertCel('size("\\U0001F600")', 1n))
+    it('size_mixed_smp', () => assertCel('size("a\\U0001F600b")', 3n))
+    it('size_multiple_smp', () => assertCel('size("\\U0001F600\\U0001F389")', 2n))
+    // ZWJ sequences are multiple code points per cel-spec
+    it('size_zwj', () => assertCel('size("\\U0001F468\\u200D\\U0001F469\\u200D\\U0001F467")', 5n))
     it('bytes_empty', () => assertCel("size(b'')", 0n))
     it('bytes', () => assertCel("size(b'abc')", 3n))
   })
@@ -920,14 +925,14 @@ describe('timestamps', () => {
     it('toInt_timestamp', () => assertCel("int(timestamp('2009-02-13T23:31:30Z'))", 1234567890n))
     it('toString_timestamp', () => assertCel("string(timestamp('2009-02-13T23:31:30Z'))", '2009-02-13T23:31:30Z'))
     it.skip('toString_timestamp_nanos - nanosecond precision not supported', () => assertCel("string(timestamp('9999-12-31T23:59:59.999999999Z'))", '9999-12-31T23:59:59.999999999Z'))
-    it.skip('toType_timestamp - type() returns object not string', () => assertCel("type(timestamp('2009-02-13T23:31:30Z'))", 'google.protobuf.Timestamp'))
-    it.skip('type_comparison - type() returns object not string', () => assertCel("google.protobuf.Timestamp == type(timestamp('2009-02-13T23:31:30Z'))", true))
+    it('toType_timestamp', () => assertCel("type(timestamp('2009-02-13T23:31:30Z'))", 'google.protobuf.Timestamp'))
+    it.skip('type_comparison - type identifiers not first-class values', () => assertCel("google.protobuf.Timestamp == type(timestamp('2009-02-13T23:31:30Z'))", true))
   })
 
   describe('duration_conversions', () => {
     it('toString_duration', () => assertCel("string(duration('1000000s'))", '1000000s'))
-    it.skip('toType_duration - type() returns object not string', () => assertCel("type(duration('1000000s'))", 'google.protobuf.Duration'))
-    it.skip('type_comparison - type() returns object not string', () => assertCel("google.protobuf.Duration == type(duration('1000000s'))", true))
+    it('toType_duration', () => assertCel("type(duration('1000000s'))", 'google.protobuf.Duration'))
+    it.skip('type_comparison - type identifiers not first-class values', () => assertCel("google.protobuf.Duration == type(duration('1000000s'))", true))
   })
 
   describe('timestamp_selectors', () => {
@@ -1117,9 +1122,9 @@ describe('string_ext', () => {
   })
 
   describe('index_of', () => {
-    it.skip('empty_index', () => assertCel("'tacocat'.indexOf('')", 0n))
-    it.skip('string_index', () => assertCel("'tacocat'.indexOf('ac')", 1n))
-    it.skip('nomatch', () => assertCel("'tacocat'.indexOf('none') == -1", true))
+    it('empty_index', () => assertCel("'tacocat'.indexOf('')", 0n))
+    it('string_index', () => assertCel("'tacocat'.indexOf('ac')", 1n))
+    it('nomatch', () => assertCel("'tacocat'.indexOf('none') == -1", true))
     it.skip('empty_index_offset', () => assertCel("'tacocat'.indexOf('', 3) == 3", true))
     it.skip('char_index', () => assertCel("'tacocat'.indexOf('a', 3) == 5", true))
     it.skip('string_index_offset', () => assertCel("'tacocat'.indexOf('at', 3) == 5", true))
@@ -1150,8 +1155,8 @@ describe('string_ext', () => {
   })
 
   describe('substring', () => {
-    it.skip('start', () => assertCel("'tacocat'.substring(4) == 'cat'", true))
-    it.skip('start_and_end', () => assertCel("'tacocat'.substring(0, 4) == 'taco'", true))
+    it('start', () => assertCel("'tacocat'.substring(4) == 'cat'", true))
+    it('start_and_end', () => assertCel("'tacocat'.substring(0, 4) == 'taco'", true))
   })
 
   describe('trim', () => {
@@ -1188,6 +1193,27 @@ describe('string_ext', () => {
   describe('type_errors', () => {
     it('charat_invalid_type', () => assertCelError("42.charAt(2) == ''"))
     it.skip('split_invalid_type', () => assertCelError("42.split('2') == ['4']"))
+  })
+
+  describe('unicode_codepoint_semantics', () => {
+    // String INDEX with SMP characters
+    it('index_emoji', () => assertCel('"a\\U0001F600b"[1]', '\u{1F600}'))
+    it('index_after_emoji', () => assertCel('"a\\U0001F600b"[2]', 'b'))
+
+    // indexOf with SMP characters
+    it('indexOf_after_smp', () => assertCel('"a\\U0001F600b".indexOf("b")', 2n))
+    it('indexOf_smp_char', () => assertCel('"a\\U0001F600b".indexOf("\\U0001F600")', 1n))
+
+    // lastIndexOf with SMP characters
+    it('lastIndexOf_after_smp', () => assertCel('"a\\U0001F600b".lastIndexOf("b")', 2n))
+    it('lastIndexOf_smp_char', () => assertCel('"\\U0001F600a\\U0001F600".lastIndexOf("\\U0001F600")', 2n))
+
+    // substring with SMP characters
+    it('substring_smp', () => assertCel('"a\\U0001F600b".substring(1, 2) == "\\U0001F600"', true))
+    it('substring_after_smp', () => assertCel('"a\\U0001F600b".substring(2) == "b"', true))
+
+    // charAt with SMP characters (already correct, but verify)
+    it('charAt_smp', () => assertCel('"a\\U0001F600b".charAt(1) == "\\U0001F600"', true))
   })
 })
 
