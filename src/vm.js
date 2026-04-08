@@ -34,6 +34,8 @@ function isBool(v)   { return typeof v === 'boolean' }
 function isList(v)   { return Array.isArray(v) }
 function isMap(v)    { return v instanceof Map }
 function isBytes(v)  { return v instanceof Uint8Array }
+function isTimestamp(v) { return v !== null && typeof v === 'object' && v.__celTimestamp === true }
+function isDuration(v)  { return v !== null && typeof v === 'object' && v.__celDuration === true }
 function isOpt(v)    { return v !== null && typeof v === 'object' && v.__celOptional === true }
 function isError(v)  { return v !== null && typeof v === 'object' && v.__celError === true }
 
@@ -52,6 +54,8 @@ function celTypeName(v) {
   if (isBytes(v))            return 'bytes'
   if (isList(v))             return 'list'
   if (isMap(v))              return 'map'
+  if (isTimestamp(v))         return 'google.protobuf.Timestamp'
+  if (isDuration(v))          return 'google.protobuf.Duration'
   if (isOpt(v))              return 'optional'
   if (v && v.__celType)      return v.name
   return 'unknown'
@@ -81,6 +85,9 @@ function celAdd(a, b) {
   if (isNum(a) && isNum(b)) return a + b
   if (isStr(a) && isStr(b)) return a + b
   if (isList(a) && isList(b)) return [...a, ...b]
+  if (isTimestamp(a) && isDuration(b)) return { __celTimestamp: true, ms: a.ms + b.ms }
+  if (isDuration(a) && isTimestamp(b)) return { __celTimestamp: true, ms: a.ms + b.ms }
+  if (isDuration(a) && isDuration(b)) return { __celDuration: true, ms: a.ms + b.ms }
   return celError(`no such overload: ${celTypeName(a)} + ${celTypeName(b)}`)
 }
 
@@ -89,6 +96,9 @@ function celSub(a, b) {
   if (isError(b)) return b
   if (isInt(a) && isInt(b)) return checkIntOverflow(a - b)
   if (isNum(a) && isNum(b)) return a - b
+  if (isTimestamp(a) && isDuration(b)) return { __celTimestamp: true, ms: a.ms - b.ms }
+  if (isTimestamp(a) && isTimestamp(b)) return { __celDuration: true, ms: a.ms - b.ms }
+  if (isDuration(a) && isDuration(b)) return { __celDuration: true, ms: a.ms - b.ms }
   return celError(`no such overload: ${celTypeName(a)} - ${celTypeName(b)}`)
 }
 
@@ -167,6 +177,8 @@ function celEq(a, b) {
     }
     return true
   }
+  if (isTimestamp(a) && isTimestamp(b)) return a.ms === b.ms
+  if (isDuration(a) && isDuration(b)) return a.ms === b.ms
   // Cross-type numeric: int == double
   if (isInt(a) && isNum(b)) return Number(a) === b
   if (isNum(a) && isInt(b)) return a === Number(b)
@@ -180,6 +192,8 @@ function celLt(a, b) {
   if (isNum(a) && isNum(b)) return a < b
   if (isStr(a) && isStr(b)) return a < b
   if (isBool(a) && isBool(b)) return (a ? 1 : 0) < (b ? 1 : 0)
+  if (isTimestamp(a) && isTimestamp(b)) return a.ms < b.ms
+  if (isDuration(a) && isDuration(b)) return a.ms < b.ms
   return celError(`no such overload: ${celTypeName(a)} < ${celTypeName(b)}`)
 }
 
@@ -190,6 +204,8 @@ function celLe(a, b) {
   if (isNum(a) && isNum(b)) return a <= b
   if (isStr(a) && isStr(b)) return a <= b
   if (isBool(a) && isBool(b)) return (a ? 1 : 0) <= (b ? 1 : 0)
+  if (isTimestamp(a) && isTimestamp(b)) return a.ms <= b.ms
+  if (isDuration(a) && isDuration(b)) return a.ms <= b.ms
   return celError(`no such overload: ${celTypeName(a)} <= ${celTypeName(b)}`)
 }
 
@@ -349,6 +365,7 @@ function callBuiltin(id, argc, stack, sp) {
         try { return BigInt(v) } catch { return celError(`int() cannot parse: '${v}'`) }
       }
       if (isBool(v)) return v ? 1n : 0n
+      if (isTimestamp(v)) return BigInt(Math.trunc(v.ms / 1000))
       return celError(`int() not supported on ${celTypeName(v)}`)
     }
     case BUILTIN.TO_UINT: {
@@ -390,6 +407,8 @@ function callBuiltin(id, argc, stack, sp) {
       if (isBool(v)) return String(v)
       if (v === null) return 'null'
       if (isBytes(v)) return new TextDecoder().decode(v)
+      if (isTimestamp(v)) return new Date(v.ms).toISOString().replace('.000Z', 'Z')
+      if (isDuration(v)) return Math.trunc(v.ms / 1000) + 's'
       return celError(`string() not supported on ${celTypeName(v)}`)
     }
     case BUILTIN.TO_BOOL: {
@@ -428,36 +447,139 @@ function callBuiltin(id, argc, stack, sp) {
       } catch { return celError(`duration() cannot parse: '${v}'`) }
     }
     case BUILTIN.GET_FULL_YEAR: {
+      if (argc === 2) {
+        const tz = stack[sp]; const v = stack[sp - 1]
+        if (!isStr(tz)) return celError('timezone argument must be a string')
+        if (!isTimestamp(v)) return celError('getFullYear() requires timestamp')
+        try { return BigInt(getTimezoneComponents(v.ms, tz).year) }
+        catch { return celError(`invalid timezone: '${tz}'`) }
+      }
       const v = stack[sp]
-      if (!v || !v.__celTimestamp) return celError('getFullYear() requires timestamp')
+      if (!isTimestamp(v)) return celError('getFullYear() requires timestamp')
       return BigInt(new Date(v.ms).getUTCFullYear())
     }
     case BUILTIN.GET_MONTH: {
+      if (argc === 2) {
+        const tz = stack[sp]; const v = stack[sp - 1]
+        if (!isStr(tz)) return celError('timezone argument must be a string')
+        if (!isTimestamp(v)) return celError('getMonth() requires timestamp')
+        try { return BigInt(getTimezoneComponents(v.ms, tz).month - 1) }
+        catch { return celError(`invalid timezone: '${tz}'`) }
+      }
       const v = stack[sp]
-      if (!v || !v.__celTimestamp) return celError('getMonth() requires timestamp')
+      if (!isTimestamp(v)) return celError('getMonth() requires timestamp')
       return BigInt(new Date(v.ms).getUTCMonth())
     }
     case BUILTIN.GET_DAY: {
+      // getDayOfMonth(): 0-based day-of-month (CEL spec: getDate() - 1)
+      if (argc === 2) {
+        const tz = stack[sp]; const v = stack[sp - 1]
+        if (!isStr(tz)) return celError('timezone argument must be a string')
+        if (!isTimestamp(v)) return celError('getDayOfMonth() requires timestamp')
+        try { return BigInt(getTimezoneComponents(v.ms, tz).day - 1) }
+        catch { return celError(`invalid timezone: '${tz}'`) }
+      }
       const v = stack[sp]
-      if (!v || !v.__celTimestamp) return celError('getDay() requires timestamp')
+      if (!isTimestamp(v)) return celError('getDayOfMonth() requires timestamp')
+      return BigInt(new Date(v.ms).getUTCDate() - 1)
+    }
+    case BUILTIN.GET_DATE: {
+      // getDate(): 1-based day-of-month
+      if (argc === 2) {
+        const tz = stack[sp]; const v = stack[sp - 1]
+        if (!isStr(tz)) return celError('timezone argument must be a string')
+        if (!isTimestamp(v)) return celError('getDate() requires timestamp')
+        try { return BigInt(getTimezoneComponents(v.ms, tz).day) }
+        catch { return celError(`invalid timezone: '${tz}'`) }
+      }
+      const v = stack[sp]
+      if (!isTimestamp(v)) return celError('getDate() requires timestamp')
       return BigInt(new Date(v.ms).getUTCDate())
     }
-    case BUILTIN.GET_HOURS: {
+    case BUILTIN.GET_DAY_OF_WEEK: {
+      if (argc === 2) {
+        const tz = stack[sp]; const v = stack[sp - 1]
+        if (!isStr(tz)) return celError('timezone argument must be a string')
+        if (!isTimestamp(v)) return celError('getDayOfWeek() requires timestamp')
+        try {
+          const c = getTimezoneComponents(v.ms, tz)
+          return BigInt(new Date(Date.UTC(c.year, c.month - 1, c.day)).getUTCDay())
+        } catch { return celError(`invalid timezone: '${tz}'`) }
+      }
       const v = stack[sp]
-      if (v && v.__celDuration) return BigInt(Math.trunc(v.ms / 3600000))
-      if (!v || !v.__celTimestamp) return celError('getHours() requires timestamp or duration')
+      if (!isTimestamp(v)) return celError('getDayOfWeek() requires timestamp')
+      return BigInt(new Date(v.ms).getUTCDay())
+    }
+    case BUILTIN.GET_DAY_OF_YEAR: {
+      if (argc === 2) {
+        const tz = stack[sp]; const v = stack[sp - 1]
+        if (!isStr(tz)) return celError('timezone argument must be a string')
+        if (!isTimestamp(v)) return celError('getDayOfYear() requires timestamp')
+        try {
+          const c = getTimezoneComponents(v.ms, tz)
+          const utcDate = Date.UTC(c.year, c.month - 1, c.day)
+          const jan1 = Date.UTC(c.year, 0, 1)
+          return BigInt(Math.floor((utcDate - jan1) / 86400000))
+        } catch { return celError(`invalid timezone: '${tz}'`) }
+      }
+      const v = stack[sp]
+      if (!isTimestamp(v)) return celError('getDayOfYear() requires timestamp')
+      const d = new Date(v.ms)
+      const start = new Date(Date.UTC(d.getUTCFullYear(), 0, 1))
+      return BigInt(Math.floor((d - start) / 86400000))
+    }
+    case BUILTIN.GET_MILLISECONDS: {
+      if (argc === 2) {
+        const tz = stack[sp]; const v = stack[sp - 1]
+        if (!isStr(tz)) return celError('timezone argument must be a string')
+        if (!isTimestamp(v)) return celError('getMilliseconds() requires timestamp')
+        // Milliseconds are timezone-independent, accept tz arg for consistency
+        return BigInt(new Date(v.ms).getUTCMilliseconds())
+      }
+      const v = stack[sp]
+      if (!isTimestamp(v)) return celError('getMilliseconds() requires timestamp')
+      return BigInt(new Date(v.ms).getUTCMilliseconds())
+    }
+    case BUILTIN.GET_HOURS: {
+      if (argc === 2) {
+        const tz = stack[sp]; const v = stack[sp - 1]
+        if (!isStr(tz)) return celError('timezone argument must be a string')
+        if (isDuration(v)) return celError('getHours() timezone not supported on duration')
+        if (!isTimestamp(v)) return celError('getHours() requires timestamp')
+        try { return BigInt(getTimezoneComponents(v.ms, tz).hour) }
+        catch { return celError(`invalid timezone: '${tz}'`) }
+      }
+      const v = stack[sp]
+      if (isDuration(v)) return BigInt(Math.trunc(v.ms / 3600000))
+      if (!isTimestamp(v)) return celError('getHours() requires timestamp or duration')
       return BigInt(new Date(v.ms).getUTCHours())
     }
     case BUILTIN.GET_MINUTES: {
+      if (argc === 2) {
+        const tz = stack[sp]; const v = stack[sp - 1]
+        if (!isStr(tz)) return celError('timezone argument must be a string')
+        if (isDuration(v)) return celError('getMinutes() timezone not supported on duration')
+        if (!isTimestamp(v)) return celError('getMinutes() requires timestamp')
+        try { return BigInt(getTimezoneComponents(v.ms, tz).minute) }
+        catch { return celError(`invalid timezone: '${tz}'`) }
+      }
       const v = stack[sp]
-      if (v && v.__celDuration) return BigInt(Math.trunc((v.ms % 3600000) / 60000))
-      if (!v || !v.__celTimestamp) return celError('getMinutes() requires timestamp or duration')
+      if (isDuration(v)) return BigInt(Math.trunc(v.ms / 60000))
+      if (!isTimestamp(v)) return celError('getMinutes() requires timestamp or duration')
       return BigInt(new Date(v.ms).getUTCMinutes())
     }
     case BUILTIN.GET_SECONDS: {
+      if (argc === 2) {
+        const tz = stack[sp]; const v = stack[sp - 1]
+        if (!isStr(tz)) return celError('timezone argument must be a string')
+        if (isDuration(v)) return celError('getSeconds() timezone not supported on duration')
+        if (!isTimestamp(v)) return celError('getSeconds() requires timestamp')
+        try { return BigInt(getTimezoneComponents(v.ms, tz).second) }
+        catch { return celError(`invalid timezone: '${tz}'`) }
+      }
       const v = stack[sp]
-      if (v && v.__celDuration) return BigInt(Math.trunc((v.ms % 60000) / 1000))
-      if (!v || !v.__celTimestamp) return celError('getSeconds() requires timestamp or duration')
+      if (isDuration(v)) return BigInt(Math.trunc(v.ms / 1000))
+      if (!isTimestamp(v)) return celError('getSeconds() requires timestamp or duration')
       return BigInt(new Date(v.ms).getUTCSeconds())
     }
 
@@ -496,6 +618,33 @@ function callBuiltin(id, argc, stack, sp) {
     default:
       return celError(`unknown builtin id: ${id}`)
   }
+}
+
+// ---------------------------------------------------------------------------
+// Timezone helper
+// ---------------------------------------------------------------------------
+
+const _tzFmtCache = new Map()
+
+function getTimezoneComponents(ms, tz) {
+  // Normalize bare offsets: "02:00" → "+02:00"
+  if (/^\d{2}:\d{2}$/.test(tz)) tz = '+' + tz
+
+  let fmt = _tzFmtCache.get(tz)
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hourCycle: 'h23',
+    })
+    _tzFmtCache.set(tz, fmt)
+  }
+
+  const parts = fmt.formatToParts(new Date(ms))
+  const m = {}
+  for (const { type, value } of parts) m[type] = parseInt(value, 10)
+  return m // { year, month, day, hour, minute, second }
 }
 
 // ---------------------------------------------------------------------------
