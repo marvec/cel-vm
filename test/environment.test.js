@@ -246,3 +246,49 @@ describe('Environment integration — custom functions', () => {
     assert.throws(() => compile('unknown(1)'), /Unknown function/)
   })
 })
+
+describe('Environment integration — custom methods', () => {
+  it('calls a custom method on a string', () => {
+    const env = new Environment()
+      .registerMethod('reverse', 0, (receiver) => {
+        if (typeof receiver !== 'string') throw new Error('reverse requires string')
+        return [...receiver].reverse().join('')
+      })
+
+    const config = env.toConfig()
+    const bytecode = compile('"hello".reverse()', { env: config })
+    const result = evaluate(bytecode, {}, config.functionTable)
+    assert.equal(result, 'olleh')
+  })
+
+  it('calls a custom method with arguments', () => {
+    const env = new Environment()
+      .registerMethod('repeat', 1, (receiver, n) => {
+        return receiver.repeat(Number(n))
+      })
+
+    const config = env.toConfig()
+    const bytecode = compile('"ab".repeat(3)', { env: config })
+    const result = evaluate(bytecode, {}, config.functionTable)
+    assert.equal(result, 'ababab')
+  })
+
+  it('custom method on a variable', () => {
+    const env = new Environment()
+      .registerMethod('twice', 0, (receiver) => receiver * 2n)
+
+    const config = env.toConfig()
+    const bytecode = compile('x.twice()', { env: config })
+    assert.equal(evaluate(bytecode, { x: 21n }, config.functionTable), 42n)
+  })
+
+  it('built-in methods still work alongside custom methods', () => {
+    const env = new Environment()
+      .registerMethod('reverse', 0, (r) => [...r].reverse().join(''))
+
+    const config = env.toConfig()
+    // Built-in: contains; Custom: reverse
+    const bytecode = compile('"hello".reverse().contains("oll")', { env: config })
+    assert.equal(evaluate(bytecode, {}, config.functionTable), true)
+  })
+})

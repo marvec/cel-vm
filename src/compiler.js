@@ -785,6 +785,18 @@ export function compile(ast, options = {}) {
       return
     }
 
+    // Custom methods from environment
+    if (env && env.customMethods.has(method)) {
+      const { id, arity } = env.customMethods.get(method)
+      if (args.length !== arity) {
+        throw new CompileError(`method '${method}' expects ${arity} argument(s), got ${args.length}`)
+      }
+      compileNode(receiver)
+      for (const a of args) compileNode(a)
+      emit(OP.CALL, id, args.length + 1) // +1 for receiver
+      return
+    }
+
     throw new CompileError(`Unknown method: '${method}'`)
   }
 
