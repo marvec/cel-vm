@@ -836,18 +836,18 @@ export function evaluate(program, activation) {
       case OP.JUMP_IF_FALSE_K: {
         // Peek (keep on stack)
         const cond = stack[sp]
-        // false → jump (short-circuit); error → fall through (evaluate right)
+        // false → jump (short-circuit); error/non-bool → fall through (evaluate right)
         if (cond === false) pc += operands[0]
-        else if (!isBool(cond) && !isError(cond)) throw new EvaluationError(`JUMP_IF_FALSE_K requires bool, got ${celTypeName(cond)}`)
+        else if (!isBool(cond) && !isError(cond)) stack[sp] = celError(`no such overload`)
         break
       }
 
       case OP.JUMP_IF_TRUE_K: {
         // Peek (keep on stack)
         const cond = stack[sp]
-        // true → jump (short-circuit); error → fall through (evaluate right)
+        // true → jump (short-circuit); error/non-bool → fall through (evaluate right)
         if (cond === true) pc += operands[0]
-        else if (!isBool(cond) && !isError(cond)) throw new EvaluationError(`JUMP_IF_TRUE_K requires bool, got ${celTypeName(cond)}`)
+        else if (!isBool(cond) && !isError(cond)) stack[sp] = celError(`no such overload`)
         break
       }
 
@@ -962,6 +962,7 @@ export function evaluate(program, activation) {
         if (isError(idx)) { stack[sp] = idx; break }
         if (isList(obj)) {
           const i = typeof idx === 'bigint' ? Number(idx) : idx
+          if (typeof i !== 'number' || !Number.isInteger(i)) { stack[sp] = celError(`invalid index type: ${celTypeName(idx)}`); break }
           if (i < 0 || i >= obj.length) { stack[sp] = celError(`index out of bounds: ${i}`); break }
           stack[sp] = obj[i]
         } else if (isMap(obj)) {
