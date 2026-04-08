@@ -53,12 +53,16 @@ const METHOD_BUILTINS = {
   replace:    BUILTIN.STRING_REPLACE,
   join:       BUILTIN.STRING_JOIN,
   // Timestamp / duration methods
-  getFullYear: BUILTIN.GET_FULL_YEAR,
-  getMonth:    BUILTIN.GET_MONTH,
-  getDayOfMonth: BUILTIN.GET_DAY,
-  getHours:    BUILTIN.GET_HOURS,
-  getMinutes:  BUILTIN.GET_MINUTES,
-  getSeconds:  BUILTIN.GET_SECONDS,
+  getFullYear:    BUILTIN.GET_FULL_YEAR,
+  getMonth:       BUILTIN.GET_MONTH,
+  getDayOfMonth:  BUILTIN.GET_DAY,
+  getDate:        BUILTIN.GET_DATE,
+  getDayOfWeek:   BUILTIN.GET_DAY_OF_WEEK,
+  getDayOfYear:   BUILTIN.GET_DAY_OF_YEAR,
+  getMilliseconds: BUILTIN.GET_MILLISECONDS,
+  getHours:       BUILTIN.GET_HOURS,
+  getMinutes:     BUILTIN.GET_MINUTES,
+  getSeconds:     BUILTIN.GET_SECONDS,
 }
 
 // ---------------------------------------------------------------------------
@@ -75,6 +79,7 @@ const CALL_BUILTINS = {
   type:      BUILTIN.TYPE_OF,
   timestamp: BUILTIN.TIMESTAMP,
   duration:  BUILTIN.DURATION,
+  dyn:       BUILTIN.DYN,
 }
 
 // Math extensions

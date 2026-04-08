@@ -194,6 +194,8 @@ function celLt(a, b) {
   if (isBool(a) && isBool(b)) return (a ? 1 : 0) < (b ? 1 : 0)
   if (isTimestamp(a) && isTimestamp(b)) return a.ms < b.ms
   if (isDuration(a) && isDuration(b)) return a.ms < b.ms
+  if (isInt(a) && isNum(b)) return Number(a) < b
+  if (isNum(a) && isInt(b)) return a < Number(b)
   return celError(`no such overload: ${celTypeName(a)} < ${celTypeName(b)}`)
 }
 
@@ -206,6 +208,8 @@ function celLe(a, b) {
   if (isBool(a) && isBool(b)) return (a ? 1 : 0) <= (b ? 1 : 0)
   if (isTimestamp(a) && isTimestamp(b)) return a.ms <= b.ms
   if (isDuration(a) && isDuration(b)) return a.ms <= b.ms
+  if (isInt(a) && isNum(b)) return Number(a) <= b
+  if (isNum(a) && isInt(b)) return a <= Number(b)
   return celError(`no such overload: ${celTypeName(a)} <= ${celTypeName(b)}`)
 }
 
@@ -581,6 +585,11 @@ function callBuiltin(id, argc, stack, sp) {
       if (isDuration(v)) return BigInt(Math.trunc(v.ms / 1000))
       if (!isTimestamp(v)) return celError('getSeconds() requires timestamp or duration')
       return BigInt(new Date(v.ms).getUTCSeconds())
+    }
+
+    // --- dyn() identity ---
+    case BUILTIN.DYN: {
+      return stack[sp]
     }
 
     // --- Math extensions ---

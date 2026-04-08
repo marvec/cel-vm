@@ -43,7 +43,10 @@ export const BUILTIN = {
   TIMESTAMP: 30, DURATION: 31,
   GET_FULL_YEAR: 32, GET_MONTH: 33, GET_DAY: 34,
   GET_HOURS: 35, GET_MINUTES: 36, GET_SECONDS: 37,
+  GET_DATE: 38, GET_DAY_OF_WEEK: 39,
   MATH_MAX: 40, MATH_MIN: 41, MATH_ABS: 42,
+  GET_DAY_OF_YEAR: 43, GET_MILLISECONDS: 44,
+  DYN: 45,
 };
 
 // ---------------------------------------------------------------------------
