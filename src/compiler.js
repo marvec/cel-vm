@@ -514,22 +514,29 @@ export function compile(ast, options = {}) {
       return null
     }
 
-    // Int64 ops
+    // Int64 ops — defer to runtime if result overflows int64 range
+    const INT64_MIN = -(2n ** 63n)
+    const INT64_MAX = 2n ** 63n - 1n
+    function foldInt(v) {
+      if (v < INT64_MIN || v > INT64_MAX) return null  // overflow → defer to runtime
+      return { tag: TAG_INT64, value: v }
+    }
+
     if (lk === TAG_INT64 && rk === TAG_INT64) {
       const l = lv.value, r = rv.value
       switch (op) {
-        case '+':  return { tag: TAG_INT64, value: l + r }
-        case '-':  return { tag: TAG_INT64, value: l - r }
-        case '*':  return { tag: TAG_INT64, value: l * r }
+        case '+':  return foldInt(l + r)
+        case '-':  return foldInt(l - r)
+        case '*':  return foldInt(l * r)
         case '/': {
           if (r === 0n) return null // division by zero - let runtime handle
-          return { tag: TAG_INT64, value: l / r }
+          return foldInt(l / r)
         }
         case '%': {
           if (r === 0n) return null
-          return { tag: TAG_INT64, value: l % r }
+          return { tag: TAG_INT64, value: l % r }  // mod can't overflow if inputs are in range
         }
-        case '**': return { tag: TAG_INT64, value: l ** r }
+        case '**': return foldInt(l ** r)
         case '==': return { tag: TAG_BOOL, value: l === r }
         case '!=': return { tag: TAG_BOOL, value: l !== r }
         case '<':  return { tag: TAG_BOOL, value: l < r }

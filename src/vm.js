@@ -35,6 +35,9 @@ function isList(v)   { return Array.isArray(v) }
 function isMap(v)    { return v instanceof Map }
 function isBytes(v)  { return v instanceof Uint8Array }
 function isOpt(v)    { return v !== null && typeof v === 'object' && v.__celOptional === true }
+function isError(v)  { return v !== null && typeof v === 'object' && v.__celError === true }
+
+function celError(msg) { return { __celError: true, message: msg } }
 
 // ---------------------------------------------------------------------------
 // Celtype helpers
@@ -55,56 +58,82 @@ function celTypeName(v) {
 }
 
 // ---------------------------------------------------------------------------
+// Int64/Uint64 range constants
+// ---------------------------------------------------------------------------
+
+const INT64_MIN  = -(2n ** 63n)
+const INT64_MAX  = 2n ** 63n - 1n
+const UINT64_MAX = 2n ** 64n - 1n
+
+function checkIntOverflow(v) {
+  if (v < INT64_MIN || v > INT64_MAX) return celError(`integer overflow: ${v}`)
+  return v
+}
+
+// ---------------------------------------------------------------------------
 // Arithmetic helpers
 // ---------------------------------------------------------------------------
 
 function celAdd(a, b) {
-  if (isInt(a) && isInt(b)) return a + b
+  if (isError(a)) return a
+  if (isError(b)) return b
+  if (isInt(a) && isInt(b)) return checkIntOverflow(a + b)
   if (isNum(a) && isNum(b)) return a + b
   if (isStr(a) && isStr(b)) return a + b
   if (isList(a) && isList(b)) return [...a, ...b]
-  throw new EvaluationError(`no such overload: ${celTypeName(a)} + ${celTypeName(b)}`)
+  return celError(`no such overload: ${celTypeName(a)} + ${celTypeName(b)}`)
 }
 
 function celSub(a, b) {
-  if (isInt(a) && isInt(b)) return a - b
+  if (isError(a)) return a
+  if (isError(b)) return b
+  if (isInt(a) && isInt(b)) return checkIntOverflow(a - b)
   if (isNum(a) && isNum(b)) return a - b
-  throw new EvaluationError(`no such overload: ${celTypeName(a)} - ${celTypeName(b)}`)
+  return celError(`no such overload: ${celTypeName(a)} - ${celTypeName(b)}`)
 }
 
 function celMul(a, b) {
-  if (isInt(a) && isInt(b)) return a * b
+  if (isError(a)) return a
+  if (isError(b)) return b
+  if (isInt(a) && isInt(b)) return checkIntOverflow(a * b)
   if (isNum(a) && isNum(b)) return a * b
-  throw new EvaluationError(`no such overload: ${celTypeName(a)} * ${celTypeName(b)}`)
+  return celError(`no such overload: ${celTypeName(a)} * ${celTypeName(b)}`)
 }
 
 function celDiv(a, b) {
+  if (isError(a)) return a
+  if (isError(b)) return b
   if (isInt(a) && isInt(b)) {
-    if (b === 0n) throw new EvaluationError('division by zero')
-    return a / b
+    if (b === 0n) return celError('division by zero')
+    return checkIntOverflow(a / b)
   }
   if (isNum(a) && isNum(b)) return a / b
-  throw new EvaluationError(`no such overload: ${celTypeName(a)} / ${celTypeName(b)}`)
+  return celError(`no such overload: ${celTypeName(a)} / ${celTypeName(b)}`)
 }
 
 function celMod(a, b) {
+  if (isError(a)) return a
+  if (isError(b)) return b
   if (isInt(a) && isInt(b)) {
-    if (b === 0n) throw new EvaluationError('modulo by zero')
-    return a % b
+    if (b === 0n) return celError('modulo by zero')
+    return a % b  // mod result is always within int64 range if inputs are
   }
-  throw new EvaluationError(`no such overload: ${celTypeName(a)} % ${celTypeName(b)}`)
+  return celError(`no such overload: ${celTypeName(a)} % ${celTypeName(b)}`)
 }
 
 function celPow(a, b) {
-  if (isInt(a) && isInt(b)) return a ** b
+  if (isError(a)) return a
+  if (isError(b)) return b
+  if (isInt(a) && isInt(b)) return checkIntOverflow(a ** b)
   if (isNum(a) && isNum(b)) return Math.pow(a, b)
-  throw new EvaluationError(`no such overload: ${celTypeName(a)} ** ${celTypeName(b)}`)
+  return celError(`no such overload: ${celTypeName(a)} ** ${celTypeName(b)}`)
 }
 
 function celNeg(a) {
-  if (isInt(a)) return -a
+  if (isError(a)) return a
+  if (isInt(a)) return checkIntOverflow(-a)
   if (isNum(a)) return -a
-  throw new EvaluationError(`no such overload: -${celTypeName(a)}`)
+  return celError(`no such overload: -${celTypeName(a)}`)
 }
 
 // ---------------------------------------------------------------------------
@@ -112,6 +141,8 @@ function celNeg(a) {
 // ---------------------------------------------------------------------------
 
 function celEq(a, b) {
+  if (isError(a)) return a
+  if (isError(b)) return b
   if (a === null && b === null) return true
   if (a === null || b === null) return false
   if (isInt(a) && isInt(b)) return a === b
@@ -143,19 +174,23 @@ function celEq(a, b) {
 }
 
 function celLt(a, b) {
+  if (isError(a)) return a
+  if (isError(b)) return b
   if (isInt(a) && isInt(b)) return a < b
   if (isNum(a) && isNum(b)) return a < b
   if (isStr(a) && isStr(b)) return a < b
   if (isBool(a) && isBool(b)) return (a ? 1 : 0) < (b ? 1 : 0)
-  throw new EvaluationError(`no such overload: ${celTypeName(a)} < ${celTypeName(b)}`)
+  return celError(`no such overload: ${celTypeName(a)} < ${celTypeName(b)}`)
 }
 
 function celLe(a, b) {
+  if (isError(a)) return a
+  if (isError(b)) return b
   if (isInt(a) && isInt(b)) return a <= b
   if (isNum(a) && isNum(b)) return a <= b
   if (isStr(a) && isStr(b)) return a <= b
   if (isBool(a) && isBool(b)) return (a ? 1 : 0) <= (b ? 1 : 0)
-  throw new EvaluationError(`no such overload: ${celTypeName(a)} <= ${celTypeName(b)}`)
+  return celError(`no such overload: ${celTypeName(a)} <= ${celTypeName(b)}`)
 }
 
 // ---------------------------------------------------------------------------
@@ -163,14 +198,16 @@ function celLe(a, b) {
 // ---------------------------------------------------------------------------
 
 function celIn(val, container) {
-  if (isList(container)) return container.some(x => celEq(x, val))
+  if (isError(val)) return val
+  if (isError(container)) return container
+  if (isList(container)) return container.some(x => celEq(x, val) === true)
   if (isMap(container)) {
     for (const k of container.keys()) {
-      if (celEq(k, val)) return true
+      if (celEq(k, val) === true) return true
     }
     return false
   }
-  throw new EvaluationError(`'in' requires list or map, got ${celTypeName(container)}`)
+  return celError(`'in' requires list or map, got ${celTypeName(container)}`)
 }
 
 // ---------------------------------------------------------------------------
@@ -178,11 +215,12 @@ function celIn(val, container) {
 // ---------------------------------------------------------------------------
 
 function celSize(v) {
+  if (isError(v)) return v
   if (isStr(v))   return BigInt(v.length)
   if (isList(v))  return BigInt(v.length)
   if (isMap(v))   return BigInt(v.size)
   if (isBytes(v)) return BigInt(v.length)
-  throw new EvaluationError(`size() not supported on ${celTypeName(v)}`)
+  return celError(`size() not supported on ${celTypeName(v)}`)
 }
 
 // ---------------------------------------------------------------------------
@@ -192,20 +230,21 @@ function celSize(v) {
 const DANGEROUS_FIELDS = new Set(['__proto__', 'constructor', 'prototype'])
 
 function celSelect(obj, field) {
-  if (DANGEROUS_FIELDS.has(field)) throw new EvaluationError(`forbidden field: ${field}`)
+  if (isError(obj)) return obj
+  if (DANGEROUS_FIELDS.has(field)) return celError(`forbidden field: ${field}`)
   if (isMap(obj)) {
-    // Try string key first, then see if key exists at all
     if (obj.has(field)) return obj.get(field)
-    throw new EvaluationError(`no such key: '${field}'`)
+    return celError(`no such key: '${field}'`)
   }
   if (obj !== null && typeof obj === 'object') {
-    if (!(field in obj)) throw new EvaluationError(`no such field: '${field}'`)
+    if (!(field in obj)) return celError(`no such field: '${field}'`)
     return obj[field]
   }
-  throw new EvaluationError(`cannot select field '${field}' from ${celTypeName(obj)}`)
+  return celError(`cannot select field '${field}' from ${celTypeName(obj)}`)
 }
 
 function celHasField(obj, field) {
+  if (isError(obj)) return obj
   if (DANGEROUS_FIELDS.has(field)) return false
   if (isMap(obj)) return obj.has(field)
   if (obj !== null && typeof obj === 'object') return field in obj
@@ -217,6 +256,11 @@ function celHasField(obj, field) {
 // ---------------------------------------------------------------------------
 
 function callBuiltin(id, argc, stack, sp) {
+  // Propagate error values from any argument
+  for (let i = 0; i < argc; i++) {
+    if (isError(stack[sp - i])) return stack[sp - i]
+  }
+
   switch (id) {
     // --- String methods (receiver is args[argc-1] at deepest) ---
     // Convention: receiver is first pushed, then args.
@@ -225,78 +269,73 @@ function callBuiltin(id, argc, stack, sp) {
     case BUILTIN.STRING_CONTAINS: {
       // argc=2: stack[sp-1]=receiver, stack[sp]=substr
       const sub = stack[sp]; const recv = stack[sp - 1]
-      if (!isStr(recv) || !isStr(sub)) throw new EvaluationError('contains() requires strings')
+      if (!isStr(recv) || !isStr(sub)) return celError('contains() requires strings')
       return recv.includes(sub)
     }
     case BUILTIN.STRING_STARTS_WITH: {
       const sub = stack[sp]; const recv = stack[sp - 1]
-      if (!isStr(recv) || !isStr(sub)) throw new EvaluationError('startsWith() requires strings')
+      if (!isStr(recv) || !isStr(sub)) return celError('startsWith() requires strings')
       return recv.startsWith(sub)
     }
     case BUILTIN.STRING_ENDS_WITH: {
       const sub = stack[sp]; const recv = stack[sp - 1]
-      if (!isStr(recv) || !isStr(sub)) throw new EvaluationError('endsWith() requires strings')
+      if (!isStr(recv) || !isStr(sub)) return celError('endsWith() requires strings')
       return recv.endsWith(sub)
     }
     case BUILTIN.STRING_MATCHES: {
       const pat = stack[sp]; const recv = stack[sp - 1]
-      if (!isStr(recv) || !isStr(pat)) throw new EvaluationError('matches() requires strings')
+      if (!isStr(recv) || !isStr(pat)) return celError('matches() requires strings')
       return new RegExp(pat).test(recv)
     }
     case BUILTIN.STRING_SUBSTRING: {
-      // argc=2 (recv, start) or argc=3 (recv, start, end)
       if (argc === 2) {
         const start = stack[sp]; const recv = stack[sp - 1]
-        if (!isStr(recv)) throw new EvaluationError('substring() requires string receiver')
-        const s = Number(start)
-        return recv.substring(s)
+        if (!isStr(recv)) return celError('substring() requires string receiver')
+        return recv.substring(Number(start))
       } else {
         const end = stack[sp]; const start = stack[sp - 1]; const recv = stack[sp - 2]
-        if (!isStr(recv)) throw new EvaluationError('substring() requires string receiver')
+        if (!isStr(recv)) return celError('substring() requires string receiver')
         return recv.substring(Number(start), Number(end))
       }
     }
     case BUILTIN.STRING_INDEX_OF: {
       const sub = stack[sp]; const recv = stack[sp - 1]
-      if (!isStr(recv) || !isStr(sub)) throw new EvaluationError('indexOf() requires strings')
+      if (!isStr(recv) || !isStr(sub)) return celError('indexOf() requires strings')
       return BigInt(recv.indexOf(sub))
     }
     case BUILTIN.STRING_SPLIT: {
       const sep = stack[sp]; const recv = stack[sp - 1]
-      if (!isStr(recv) || !isStr(sep)) throw new EvaluationError('split() requires strings')
+      if (!isStr(recv) || !isStr(sep)) return celError('split() requires strings')
       return recv.split(sep)
     }
     case BUILTIN.STRING_LOWER_ASCII: {
       const recv = stack[sp]
-      if (!isStr(recv)) throw new EvaluationError('lowerAscii() requires string')
+      if (!isStr(recv)) return celError('lowerAscii() requires string')
       return recv.toLowerCase()
     }
     case BUILTIN.STRING_UPPER_ASCII: {
       const recv = stack[sp]
-      if (!isStr(recv)) throw new EvaluationError('upperAscii() requires string')
+      if (!isStr(recv)) return celError('upperAscii() requires string')
       return recv.toUpperCase()
     }
     case BUILTIN.STRING_TRIM: {
       const recv = stack[sp]
-      if (!isStr(recv)) throw new EvaluationError('trim() requires string')
+      if (!isStr(recv)) return celError('trim() requires string')
       return recv.trim()
     }
     case BUILTIN.STRING_REPLACE: {
-      // recv.replace(old, new)
       const newStr = stack[sp]; const oldStr = stack[sp - 1]; const recv = stack[sp - 2]
-      if (!isStr(recv)) throw new EvaluationError('replace() requires string receiver')
+      if (!isStr(recv)) return celError('replace() requires string receiver')
       return recv.split(oldStr).join(newStr)
     }
     case BUILTIN.STRING_JOIN: {
-      // list.join(sep) — argc=2, stack[sp-1]=list, stack[sp]=sep
       if (argc === 2) {
         const sep = stack[sp]; const list = stack[sp - 1]
-        if (!isList(list)) throw new EvaluationError('join() requires list receiver')
+        if (!isList(list)) return celError('join() requires list receiver')
         return list.join(isStr(sep) ? sep : String(sep))
       } else {
-        // argc=1: list.join() with no sep
         const list = stack[sp]
-        if (!isList(list)) throw new EvaluationError('join() requires list receiver')
+        if (!isList(list)) return celError('join() requires list receiver')
         return list.join('')
       }
     }
@@ -307,30 +346,29 @@ function callBuiltin(id, argc, stack, sp) {
       if (isInt(v)) return v
       if (isNum(v)) return BigInt(Math.trunc(v))
       if (isStr(v)) {
-        try { return BigInt(v) } catch { throw new EvaluationError(`int() cannot parse: '${v}'`) }
+        try { return BigInt(v) } catch { return celError(`int() cannot parse: '${v}'`) }
       }
       if (isBool(v)) return v ? 1n : 0n
-      throw new EvaluationError(`int() not supported on ${celTypeName(v)}`)
+      return celError(`int() not supported on ${celTypeName(v)}`)
     }
     case BUILTIN.TO_UINT: {
       const v = stack[sp]
       if (isInt(v)) {
-        if (v < 0n) throw new EvaluationError('uint() cannot convert negative int')
+        if (v < 0n) return celError('uint() cannot convert negative int')
         return v
       }
       if (isNum(v)) return BigInt(Math.trunc(Math.abs(v)))
       if (isStr(v)) {
         try {
           const n = BigInt(v)
-          if (n < 0n) throw new EvaluationError('uint() cannot convert negative value')
+          if (n < 0n) return celError('uint() cannot convert negative value')
           return n
-        } catch (e) {
-          if (e instanceof EvaluationError) throw e
-          throw new EvaluationError(`uint() cannot parse: '${v}'`)
+        } catch {
+          return celError(`uint() cannot parse: '${v}'`)
         }
       }
       if (isBool(v)) return v ? 1n : 0n
-      throw new EvaluationError(`uint() not supported on ${celTypeName(v)}`)
+      return celError(`uint() not supported on ${celTypeName(v)}`)
     }
     case BUILTIN.TO_DOUBLE: {
       const v = stack[sp]
@@ -338,11 +376,11 @@ function callBuiltin(id, argc, stack, sp) {
       if (isInt(v)) return Number(v)
       if (isStr(v)) {
         const n = parseFloat(v)
-        if (isNaN(n)) throw new EvaluationError(`double() cannot parse: '${v}'`)
+        if (isNaN(n)) return celError(`double() cannot parse: '${v}'`)
         return n
       }
       if (isBool(v)) return v ? 1.0 : 0.0
-      throw new EvaluationError(`double() not supported on ${celTypeName(v)}`)
+      return celError(`double() not supported on ${celTypeName(v)}`)
     }
     case BUILTIN.TO_STRING: {
       const v = stack[sp]
@@ -352,7 +390,7 @@ function callBuiltin(id, argc, stack, sp) {
       if (isBool(v)) return String(v)
       if (v === null) return 'null'
       if (isBytes(v)) return new TextDecoder().decode(v)
-      throw new EvaluationError(`string() not supported on ${celTypeName(v)}`)
+      return celError(`string() not supported on ${celTypeName(v)}`)
     }
     case BUILTIN.TO_BOOL: {
       const v = stack[sp]
@@ -360,15 +398,15 @@ function callBuiltin(id, argc, stack, sp) {
       if (isStr(v)) {
         if (v === 'true') return true
         if (v === 'false') return false
-        throw new EvaluationError(`bool() cannot parse: '${v}'`)
+        return celError(`bool() cannot parse: '${v}'`)
       }
-      throw new EvaluationError(`bool() not supported on ${celTypeName(v)}`)
+      return celError(`bool() not supported on ${celTypeName(v)}`)
     }
     case BUILTIN.TO_BYTES: {
       const v = stack[sp]
       if (isBytes(v)) return v
       if (isStr(v)) return new TextEncoder().encode(v)
-      throw new EvaluationError(`bytes() not supported on ${celTypeName(v)}`)
+      return celError(`bytes() not supported on ${celTypeName(v)}`)
     }
     case BUILTIN.TYPE_OF: {
       return { __celType: true, name: celTypeName(stack[sp]) }
@@ -377,45 +415,49 @@ function callBuiltin(id, argc, stack, sp) {
     // --- Timestamp / Duration ---
     case BUILTIN.TIMESTAMP: {
       const v = stack[sp]
-      if (!isStr(v)) throw new EvaluationError('timestamp() requires string')
+      if (!isStr(v)) return celError('timestamp() requires string')
       const d = new Date(v)
-      if (isNaN(d.getTime())) throw new EvaluationError(`timestamp() cannot parse: '${v}'`)
+      if (isNaN(d.getTime())) return celError(`timestamp() cannot parse: '${v}'`)
       return { __celTimestamp: true, ms: d.getTime() }
     }
     case BUILTIN.DURATION: {
       const v = stack[sp]
-      if (!isStr(v)) throw new EvaluationError('duration() requires string')
-      // Parse simple duration: e.g. "1s", "1m30s", "1h", "500ms"
-      return { __celDuration: true, ms: parseDuration(v) }
+      if (!isStr(v)) return celError('duration() requires string')
+      try {
+        return { __celDuration: true, ms: parseDuration(v) }
+      } catch { return celError(`duration() cannot parse: '${v}'`) }
     }
     case BUILTIN.GET_FULL_YEAR: {
       const v = stack[sp]
-      if (!v || !v.__celTimestamp) throw new EvaluationError('getFullYear() requires timestamp')
+      if (!v || !v.__celTimestamp) return celError('getFullYear() requires timestamp')
       return BigInt(new Date(v.ms).getUTCFullYear())
     }
     case BUILTIN.GET_MONTH: {
       const v = stack[sp]
-      if (!v || !v.__celTimestamp) throw new EvaluationError('getMonth() requires timestamp')
+      if (!v || !v.__celTimestamp) return celError('getMonth() requires timestamp')
       return BigInt(new Date(v.ms).getUTCMonth())
     }
     case BUILTIN.GET_DAY: {
       const v = stack[sp]
-      if (!v || !v.__celTimestamp) throw new EvaluationError('getDay() requires timestamp')
+      if (!v || !v.__celTimestamp) return celError('getDay() requires timestamp')
       return BigInt(new Date(v.ms).getUTCDate())
     }
     case BUILTIN.GET_HOURS: {
       const v = stack[sp]
-      if (!v || !v.__celTimestamp) throw new EvaluationError('getHours() requires timestamp')
+      if (v && v.__celDuration) return BigInt(Math.trunc(v.ms / 3600000))
+      if (!v || !v.__celTimestamp) return celError('getHours() requires timestamp or duration')
       return BigInt(new Date(v.ms).getUTCHours())
     }
     case BUILTIN.GET_MINUTES: {
       const v = stack[sp]
-      if (!v || !v.__celTimestamp) throw new EvaluationError('getMinutes() requires timestamp')
+      if (v && v.__celDuration) return BigInt(Math.trunc((v.ms % 3600000) / 60000))
+      if (!v || !v.__celTimestamp) return celError('getMinutes() requires timestamp or duration')
       return BigInt(new Date(v.ms).getUTCMinutes())
     }
     case BUILTIN.GET_SECONDS: {
       const v = stack[sp]
-      if (!v || !v.__celTimestamp) throw new EvaluationError('getSeconds() requires timestamp')
+      if (v && v.__celDuration) return BigInt(Math.trunc((v.ms % 60000) / 1000))
+      if (!v || !v.__celTimestamp) return celError('getSeconds() requires timestamp or duration')
       return BigInt(new Date(v.ms).getUTCSeconds())
     }
 
@@ -423,36 +465,36 @@ function callBuiltin(id, argc, stack, sp) {
     case BUILTIN.MATH_MAX: {
       if (argc === 1) {
         const list = stack[sp]
-        if (!isList(list)) throw new EvaluationError('math.max() requires list or two args')
-        if (list.length === 0) throw new EvaluationError('math.max() called on empty list')
+        if (!isList(list)) return celError('math.max() requires list or two args')
+        if (list.length === 0) return celError('math.max() called on empty list')
         return list.reduce((a, b) => (isInt(a) ? a > b : a > b) ? a : b)
       }
       const b = stack[sp]; const a = stack[sp - 1]
       if (isInt(a) && isInt(b)) return a > b ? a : b
       if (isNum(a) && isNum(b)) return Math.max(a, b)
-      throw new EvaluationError('math.max() requires numeric args')
+      return celError('math.max() requires numeric args')
     }
     case BUILTIN.MATH_MIN: {
       if (argc === 1) {
         const list = stack[sp]
-        if (!isList(list)) throw new EvaluationError('math.min() requires list or two args')
-        if (list.length === 0) throw new EvaluationError('math.min() called on empty list')
+        if (!isList(list)) return celError('math.min() requires list or two args')
+        if (list.length === 0) return celError('math.min() called on empty list')
         return list.reduce((a, b) => (isInt(a) ? a < b : a < b) ? a : b)
       }
       const b = stack[sp]; const a = stack[sp - 1]
       if (isInt(a) && isInt(b)) return a < b ? a : b
       if (isNum(a) && isNum(b)) return Math.min(a, b)
-      throw new EvaluationError('math.min() requires numeric args')
+      return celError('math.min() requires numeric args')
     }
     case BUILTIN.MATH_ABS: {
       const v = stack[sp]
       if (isInt(v)) return v < 0n ? -v : v
       if (isNum(v)) return Math.abs(v)
-      throw new EvaluationError('math.abs() requires numeric arg')
+      return celError('math.abs() requires numeric arg')
     }
 
     default:
-      throw new EvaluationError(`unknown builtin id: ${id}`)
+      return celError(`unknown builtin id: ${id}`)
   }
 }
 
@@ -554,7 +596,9 @@ export function evaluate(program, activation) {
       }
 
       case OP.RETURN: {
-        return stack[sp]
+        const result = stack[sp]
+        if (isError(result)) throw new EvaluationError(result.message)
+        return result
       }
 
       // ── Jumps ─────────────────────────────────────────────────────────────
@@ -565,31 +609,34 @@ export function evaluate(program, activation) {
 
       case OP.JUMP_IF_FALSE: {
         const cond = stack[sp--]
-        if (!isBool(cond)) throw new EvaluationError(`JUMP_IF_FALSE requires bool, got ${celTypeName(cond)}`)
-        if (!cond) pc += operands[0]
+        // Errors and non-bool: don't jump (fall through to evaluate other branch)
+        if (cond === false) pc += operands[0]
+        else if (!isBool(cond) && !isError(cond)) throw new EvaluationError(`JUMP_IF_FALSE requires bool, got ${celTypeName(cond)}`)
         break
       }
 
       case OP.JUMP_IF_TRUE: {
         const cond = stack[sp--]
-        if (!isBool(cond)) throw new EvaluationError(`JUMP_IF_TRUE requires bool, got ${celTypeName(cond)}`)
-        if (cond) pc += operands[0]
+        if (cond === true) pc += operands[0]
+        else if (!isBool(cond) && !isError(cond)) throw new EvaluationError(`JUMP_IF_TRUE requires bool, got ${celTypeName(cond)}`)
         break
       }
 
       case OP.JUMP_IF_FALSE_K: {
         // Peek (keep on stack)
         const cond = stack[sp]
-        if (!isBool(cond)) throw new EvaluationError(`JUMP_IF_FALSE_K requires bool, got ${celTypeName(cond)}`)
-        if (!cond) pc += operands[0]
+        // false → jump (short-circuit); error → fall through (evaluate right)
+        if (cond === false) pc += operands[0]
+        else if (!isBool(cond) && !isError(cond)) throw new EvaluationError(`JUMP_IF_FALSE_K requires bool, got ${celTypeName(cond)}`)
         break
       }
 
       case OP.JUMP_IF_TRUE_K: {
         // Peek (keep on stack)
         const cond = stack[sp]
-        if (!isBool(cond)) throw new EvaluationError(`JUMP_IF_TRUE_K requires bool, got ${celTypeName(cond)}`)
-        if (cond) pc += operands[0]
+        // true → jump (short-circuit); error → fall through (evaluate right)
+        if (cond === true) pc += operands[0]
+        else if (!isBool(cond) && !isError(cond)) throw new EvaluationError(`JUMP_IF_TRUE_K requires bool, got ${celTypeName(cond)}`)
         break
       }
 
@@ -664,13 +711,16 @@ export function evaluate(program, activation) {
       // ── Logic ─────────────────────────────────────────────────────────────
       case OP.NOT: {
         const v = stack[sp]
-        if (!isBool(v)) throw new EvaluationError(`! requires bool, got ${celTypeName(v)}`)
+        if (isError(v)) break  // propagate error
+        if (!isBool(v)) { stack[sp] = celError(`! requires bool, got ${celTypeName(v)}`); break }
         stack[sp] = !v
         break
       }
       case OP.XOR: {
         const b = stack[sp--]; const a = stack[sp]
-        if (!isInt(a) || !isInt(b)) throw new EvaluationError(`^ requires int, got ${celTypeName(a)} ^ ${celTypeName(b)}`)
+        if (isError(a)) break
+        if (isError(b)) { stack[sp] = b; break }
+        if (!isInt(a) || !isInt(b)) { stack[sp] = celError(`^ requires int, got ${celTypeName(a)} ^ ${celTypeName(b)}`); break }
         stack[sp] = a ^ b
         break
       }
@@ -697,23 +747,24 @@ export function evaluate(program, activation) {
       }
       case OP.INDEX: {
         const idx = stack[sp--]; const obj = stack[sp]
+        if (isError(obj)) { break }
+        if (isError(idx)) { stack[sp] = idx; break }
         if (isList(obj)) {
           const i = typeof idx === 'bigint' ? Number(idx) : idx
-          if (i < 0 || i >= obj.length) throw new EvaluationError(`index out of bounds: ${i}`)
+          if (i < 0 || i >= obj.length) { stack[sp] = celError(`index out of bounds: ${i}`); break }
           stack[sp] = obj[i]
         } else if (isMap(obj)) {
-          // Try to find key — handle BigInt/number cross-matching
           let found = false
           for (const [k, v] of obj) {
-            if (celEq(k, idx)) { stack[sp] = v; found = true; break }
+            if (celEq(k, idx) === true) { stack[sp] = v; found = true; break }
           }
-          if (!found) throw new EvaluationError(`no such key: '${idx}'`)
+          if (!found) stack[sp] = celError(`no such key: '${idx}'`)
         } else if (isStr(obj)) {
           const i = typeof idx === 'bigint' ? Number(idx) : idx
-          if (i < 0 || i >= obj.length) throw new EvaluationError(`index out of bounds: ${i}`)
+          if (i < 0 || i >= obj.length) { stack[sp] = celError(`index out of bounds: ${i}`); break }
           stack[sp] = obj[i]
         } else {
-          throw new EvaluationError(`cannot index ${celTypeName(obj)}`)
+          stack[sp] = celError(`cannot index ${celTypeName(obj)}`)
         }
         break
       }
@@ -755,8 +806,9 @@ export function evaluate(program, activation) {
       // ── Comprehension ─────────────────────────────────────────────────────
       case OP.ITER_INIT: {
         const list = stack[sp]
+        if (isError(list)) break  // propagate error
         if (!isList(list) && !isMap(list)) {
-          throw new EvaluationError(`cannot iterate over ${celTypeName(list)}`)
+          stack[sp] = celError(`cannot iterate over ${celTypeName(list)}`); break
         }
         const items = isMap(list) ? [...list.keys()] : list
         stack[sp] = { __iter: true, items, idx: 0 }
@@ -855,5 +907,7 @@ export function evaluate(program, activation) {
   }
 
   // Should not reach here if bytecode ends with RETURN
-  return stack[sp]
+  const result = stack[sp]
+  if (isError(result)) throw new EvaluationError(result.message)
+  return result
 }
