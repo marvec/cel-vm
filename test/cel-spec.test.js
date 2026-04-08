@@ -845,6 +845,11 @@ describe('string', () => {
     it('one_unicode', () => assertCel("size('\u00ff')", 1n))
     it('ascii', () => assertCel("size('four')", 4n))
     it('unicode', () => assertCel("size('\u03c0\u03ad\u03bd\u03c4\u03b5')", 5n))
+    it('size_emoji', () => assertCel('size("\\U0001F600")', 1n))
+    it('size_mixed_smp', () => assertCel('size("a\\U0001F600b")', 3n))
+    it('size_multiple_smp', () => assertCel('size("\\U0001F600\\U0001F389")', 2n))
+    // ZWJ sequences are multiple code points per cel-spec
+    it('size_zwj', () => assertCel('size("\\U0001F468\\u200D\\U0001F469\\u200D\\U0001F467")', 5n))
     it('bytes_empty', () => assertCel("size(b'')", 0n))
     it('bytes', () => assertCel("size(b'abc')", 3n))
   })
@@ -1117,9 +1122,9 @@ describe('string_ext', () => {
   })
 
   describe('index_of', () => {
-    it.skip('empty_index', () => assertCel("'tacocat'.indexOf('')", 0n))
-    it.skip('string_index', () => assertCel("'tacocat'.indexOf('ac')", 1n))
-    it.skip('nomatch', () => assertCel("'tacocat'.indexOf('none') == -1", true))
+    it('empty_index', () => assertCel("'tacocat'.indexOf('')", 0n))
+    it('string_index', () => assertCel("'tacocat'.indexOf('ac')", 1n))
+    it('nomatch', () => assertCel("'tacocat'.indexOf('none') == -1", true))
     it.skip('empty_index_offset', () => assertCel("'tacocat'.indexOf('', 3) == 3", true))
     it.skip('char_index', () => assertCel("'tacocat'.indexOf('a', 3) == 5", true))
     it.skip('string_index_offset', () => assertCel("'tacocat'.indexOf('at', 3) == 5", true))
@@ -1150,8 +1155,8 @@ describe('string_ext', () => {
   })
 
   describe('substring', () => {
-    it.skip('start', () => assertCel("'tacocat'.substring(4) == 'cat'", true))
-    it.skip('start_and_end', () => assertCel("'tacocat'.substring(0, 4) == 'taco'", true))
+    it('start', () => assertCel("'tacocat'.substring(4) == 'cat'", true))
+    it('start_and_end', () => assertCel("'tacocat'.substring(0, 4) == 'taco'", true))
   })
 
   describe('trim', () => {
@@ -1188,6 +1193,27 @@ describe('string_ext', () => {
   describe('type_errors', () => {
     it('charat_invalid_type', () => assertCelError("42.charAt(2) == ''"))
     it.skip('split_invalid_type', () => assertCelError("42.split('2') == ['4']"))
+  })
+
+  describe('unicode_codepoint_semantics', () => {
+    // String INDEX with SMP characters
+    it('index_emoji', () => assertCel('"a\\U0001F600b"[1]', '\u{1F600}'))
+    it('index_after_emoji', () => assertCel('"a\\U0001F600b"[2]', 'b'))
+
+    // indexOf with SMP characters
+    it('indexOf_after_smp', () => assertCel('"a\\U0001F600b".indexOf("b")', 2n))
+    it('indexOf_smp_char', () => assertCel('"a\\U0001F600b".indexOf("\\U0001F600")', 1n))
+
+    // lastIndexOf with SMP characters
+    it('lastIndexOf_after_smp', () => assertCel('"a\\U0001F600b".lastIndexOf("b")', 2n))
+    it('lastIndexOf_smp_char', () => assertCel('"\\U0001F600a\\U0001F600".lastIndexOf("\\U0001F600")', 2n))
+
+    // substring with SMP characters
+    it('substring_smp', () => assertCel('"a\\U0001F600b".substring(1, 2) == "\\U0001F600"', true))
+    it('substring_after_smp', () => assertCel('"a\\U0001F600b".substring(2) == "b"', true))
+
+    // charAt with SMP characters (already correct, but verify)
+    it('charAt_smp', () => assertCel('"a\\U0001F600b".charAt(1) == "\\U0001F600"', true))
   })
 })
 

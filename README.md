@@ -198,7 +198,7 @@ bun run bench/compare.js
 | **Duration** | Parse, accessors, arithmetic, comparisons | Not supported | Duration accessors return total values (e.g. `getMinutes()` = total minutes) |
 | **Bytes** | `b"..."` → `Uint8Array` | Not supported | Full bytes literal support |
 | **Enums** | Not supported | Same | No proto schema to resolve enum names |
-| **String Unicode** | `size()` = UTF-16 code units | Same | Both use JS `String.length` |
+| **String Unicode** | Code point semantics (`size()`, indexing, `substring()`, `indexOf()`, `lastIndexOf()`) | UTF-16 code units | cel-vm counts Unicode code points per cel-spec |
 
 ## Architecture
 
