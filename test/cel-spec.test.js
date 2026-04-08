@@ -856,7 +856,7 @@ describe('string', () => {
     it('empty_arg', () => assertCel("'foobar'.startsWith('')", true))
     it('empty_empty', () => assertCel("''.startsWith('')", true))
     it('unicode', () => assertCel("'\u0437\u0430\u0432\u0442\u0440\u0430'.startsWith('\u0437\u0430')", true))
-    it.skip('unicode_smp', () => assertCel("'\\U0001F431\\U0001F600\\U0001F61B'.startsWith('\\U0001F431')", true))
+    it('unicode_smp', () => assertCel("'\\U0001F431\\U0001F600\\U0001F61B'.startsWith('\\U0001F431')", true))
   })
 
   describe('ends_with', () => {
@@ -866,7 +866,7 @@ describe('string', () => {
     it('empty_arg', () => assertCel("'foobar'.endsWith('')", true))
     it('empty_empty', () => assertCel("''.endsWith('')", true))
     it('unicode', () => assertCel("'fort\u00e9'.endsWith('t\u00e9')", true))
-    it.skip('unicode_smp', () => assertCel("'\\U0001F431\\U0001F600\\U0001F61B'.endsWith('\\U0001F61B')", true))
+    it('unicode_smp', () => assertCel("'\\U0001F431\\U0001F600\\U0001F61B'.endsWith('\\U0001F61B')", true))
   })
 
   describe('matches', () => {
@@ -878,7 +878,7 @@ describe('string', () => {
     it('re_alt', () => assertCel("'grey'.matches('gr(a|e)y')", true))
     it('re_rep', () => assertCel("'banana'.matches('ba(na)*')", true))
     it('unicode', () => assertCel("'ma\u00f1ana'.matches('a+\u00f1+a+')", true))
-    it.skip('unicode_smp', () => assertCel("'\\U0001F431\\U0001F600\\U0001F600'.matches('(a|\\U0001F600){2}')", true))
+    it('unicode_smp', () => assertCel("'\\U0001F431\\U0001F600\\U0001F600'.matches('(a|\\U0001F600){2}')", true))
   })
 
   describe('concatenation', () => {
@@ -889,7 +889,7 @@ describe('string', () => {
     it('concat_empty_with_empty', () => assertCel("'' + ''", ''))
     it('unicode_unicode', () => assertCel("'\u00a2' + '\u00ff' + '\u0200'", '\u00a2\u00ff\u0200'))
     it('ascii_unicode', () => assertCel("'r' + '\u00f4' + 'le'", 'r\u00f4le'))
-    it.skip('ascii_unicode_unicode_smp', () => assertCel("'a' + '\u00ff' + '\\U0001F431'", 'a\u00ff\u{1f431}'))
+    it('ascii_unicode_unicode_smp', () => assertCel("'a' + '\u00ff' + '\\U0001F431'", 'a\u00ff\u{1f431}'))
     it('empty_unicode', () => assertCel("'' + '\u03a9' + ''", '\u03a9'))
   })
 
@@ -899,7 +899,7 @@ describe('string', () => {
     it('contains_false', () => assertCel("'hello'.contains('ol')", false))
     it('contains_multiple', () => assertCel("'abababc'.contains('ababc')", true))
     it('contains_unicode', () => assertCel("'Stra\u00dfe'.contains('a\u00df')", true))
-    it.skip('contains_unicode_smp', () => assertCel("'\\U0001F431\\U0001F600\\U0001F601'.contains('\\U0001F600')", true))
+    it('contains_unicode_smp', () => assertCel("'\\U0001F431\\U0001F600\\U0001F601'.contains('\\U0001F600')", true))
     it('empty_contains', () => assertCel("''.contains('something')", false))
     it('empty_empty', () => assertCel("''.contains('')", true))
   })
