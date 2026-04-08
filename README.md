@@ -238,4 +238,4 @@ Tests are written with Node's built-in `node:test`. No test framework dependenci
 
 ## License
 
-MIT
+GNU GPLv3

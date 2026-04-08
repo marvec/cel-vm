@@ -29,9 +29,5 @@ describe('built-in functions', () => {
   it('string(bool)', () => assertCel('string(true)', 'true'))
   it('bool("true")', () => assertCel('bool("true")', true))
   it('bool("false")', () => assertCel('bool("false")', false))
-  it('type() returns type object', () => {
-    const result = cel('type(1)')
-    assert.ok(result && result.__celType, 'expected type object')
-    assert.equal(result.name, 'int')
-  })
+  it('type() returns type name string', () => assertCel('type(1)', 'int'))
 })

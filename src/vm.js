@@ -57,7 +57,6 @@ function celTypeName(v) {
   if (isTimestamp(v))         return 'google.protobuf.Timestamp'
   if (isDuration(v))          return 'google.protobuf.Duration'
   if (isOpt(v))              return 'optional'
-  if (v && v.__celType)      return v.name
   return 'unknown'
 }
 
@@ -493,12 +492,13 @@ function callBuiltin(id, argc, stack, sp) {
       return celError(`bytes() not supported on ${celTypeName(v)}`)
     }
     case BUILTIN.TYPE_OF: {
-      return { __celType: true, name: celTypeName(stack[sp]) }
+      return celTypeName(stack[sp])
     }
 
     // --- Timestamp / Duration ---
     case BUILTIN.TIMESTAMP: {
       const v = stack[sp]
+      if (typeof v === 'bigint') return { __celTimestamp: true, ms: Number(v) * 1000 }
       if (!isStr(v)) return celError('timestamp() requires string')
       const d = new Date(v)
       if (isNaN(d.getTime())) return celError(`timestamp() cannot parse: '${v}'`)
