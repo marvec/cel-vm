@@ -1,12 +1,40 @@
 {
   "name": "cel-vm",
   "version": "0.1.0",
-  "description": "High-performance CEL evaluator using a bytecode VM",
+  "description": "High-performance CEL (Common Expression Language) evaluator using a bytecode VM — compile once, evaluate many times",
   "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "bin": {
+    "cel": "./bin/cel.js"
+  },
+  "files": [
+    "src/",
+    "bin/"
+  ],
   "scripts": {
     "test": "bun test",
     "test:lexer": "bun test test/lexer.test.js",
     "bench": "bun run bench/compare.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "cel",
+    "cel-js",
+    "expression",
+    "bytecode",
+    "vm",
+    "common-expression-language",
+    "evaluator"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mvecera/cel-vm"
   },
   "devDependencies": {
     "cel-js": "^0.8.2"
