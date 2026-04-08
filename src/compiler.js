@@ -157,8 +157,12 @@ function collectVarNames(node, boundNames, out) {
       collectVarNames(node.object, boundNames, out)
       break
     case 'Index':
+    case 'OptIndex':
       collectVarNames(node.object, boundNames, out)
       collectVarNames(node.index,  boundNames, out)
+      break
+    case 'OptElement':
+      collectVarNames(node.expr, boundNames, out)
       break
     case 'Call':
       for (const a of node.args) collectVarNames(a, boundNames, out)
@@ -386,6 +390,19 @@ export function compile(ast, options = {}) {
         break
       }
 
+      case 'OptIndex': {
+        compileNode(node.object)
+        compileNode(node.index)
+        emit(OP.OPT_INDEX)
+        break
+      }
+
+      case 'OptElement': {
+        compileNode(node.expr)
+        // Result stays as optional on stack; BUILD_LIST filters optional.none()
+        break
+      }
+
       case 'Index': {
         compileNode(node.object)
         compileNode(node.index)
@@ -445,25 +462,27 @@ export function compile(ast, options = {}) {
     const { op, left, right } = node
 
     // Short-circuit: &&
-    // Use JUMP_IF_FALSE_K (peek/keep) so 'false' stays on stack as result when jumping
+    // Use JUMP_IF_FALSE_K (peek/keep) so 'false' stays on stack as result when jumping.
+    // When LHS is error or true, fall through: evaluate RHS, then LOGICAL_AND combines
+    // both values with CEL's commutative error semantics.
     if (op === '&&') {
       compileNode(left)
       const jumpFalse = emitJump(OP.JUMP_IF_FALSE_K)
-      // left was true (kept on stack by K variant), pop it and evaluate right
-      emit(OP.POP)
       compileNode(right)
+      emit(OP.LOGICAL_AND)
       patchJump(jumpFalse, instrs.length)
       return
     }
 
     // Short-circuit: ||
-    // Use JUMP_IF_TRUE_K (peek/keep) so 'true' stays on stack as result when jumping
+    // Use JUMP_IF_TRUE_K (peek/keep) so 'true' stays on stack as result when jumping.
+    // When LHS is error or false, fall through: evaluate RHS, then LOGICAL_OR combines
+    // both values with CEL's commutative error semantics.
     if (op === '||') {
       compileNode(left)
       const jumpTrue = emitJump(OP.JUMP_IF_TRUE_K)
-      // left was false (kept on stack by K variant), pop it and evaluate right
-      emit(OP.POP)
       compileNode(right)
+      emit(OP.LOGICAL_OR)
       patchJump(jumpTrue, instrs.length)
       return
     }
@@ -691,15 +710,22 @@ export function compile(ast, options = {}) {
       return
     }
 
-    // optional.ofNonZero(v) — same as optional.of for our purposes
+    // optional.ofNonZero(v) / optional.ofNonZeroValue(v)
     if (
-      method === 'ofNonZero' &&
+      (method === 'ofNonZero' || method === 'ofNonZeroValue') &&
       args.length === 1 &&
       receiver.type === 'Ident' &&
       receiver.name === 'optional'
     ) {
       compileNode(args[0])
-      emit(OP.OPT_OF)
+      emit(OP.OPT_OF_NON_ZERO)
+      return
+    }
+
+    // x.hasValue() — optional has-value check
+    if (method === 'hasValue' && args.length === 0) {
+      compileNode(receiver)
+      emit(OP.OPT_HAS_VALUE)
       return
     }
 
@@ -804,7 +830,9 @@ export function compile(ast, options = {}) {
                subtreeReferencesIdent(node.else, name)
       case 'Select':
       case 'OptSelect': return subtreeReferencesIdent(node.object, name)
-      case 'Index': return subtreeReferencesIdent(node.object, name) || subtreeReferencesIdent(node.index, name)
+      case 'Index':
+      case 'OptIndex': return subtreeReferencesIdent(node.object, name) || subtreeReferencesIdent(node.index, name)
+      case 'OptElement': return subtreeReferencesIdent(node.expr, name)
       case 'Call': return node.args.some(a => subtreeReferencesIdent(a, name))
       case 'RCall':
         return subtreeReferencesIdent(node.receiver, name) ||

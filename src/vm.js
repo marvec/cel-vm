@@ -291,6 +291,13 @@ const DANGEROUS_FIELDS = new Set(['__proto__', 'constructor', 'prototype'])
 
 function celSelect(obj, field) {
   if (isError(obj)) return obj
+  // Optional chaining propagation: none stays none, of(v) selects from v
+  if (isOpt(obj)) {
+    if (obj.value === undefined) return obj // none → none
+    const inner = celSelect(obj.value, field)
+    if (isError(inner)) return inner // errors propagate (e.g. select from null)
+    return { __celOptional: true, value: inner }
+  }
   if (DANGEROUS_FIELDS.has(field)) return celError(`forbidden field: ${field}`)
   if (isMap(obj)) {
     if (obj.has(field)) return obj.get(field)
@@ -498,7 +505,7 @@ function callBuiltin(id, argc, stack, sp) {
     // --- Timestamp / Duration ---
     case BUILTIN.TIMESTAMP: {
       const v = stack[sp]
-      if (typeof v === 'bigint') return { __celTimestamp: true, ms: Number(v) * 1000 }
+      if (isInt(v)) return { __celTimestamp: true, ms: Number(v) * 1000 }
       if (!isStr(v)) return celError('timestamp() requires string')
       const d = new Date(v)
       if (isNaN(d.getTime())) return celError(`timestamp() cannot parse: '${v}'`)
@@ -982,7 +989,23 @@ export function evaluate(program, activation) {
         const n = operands[0]
         const list = new Array(n)
         for (let i = n - 1; i >= 0; i--) list[i] = stack[sp--]
-        stack[++sp] = list
+        // Filter optional elements: unwrap optional.of(v), skip optional.none()
+        let hasOpt = false
+        for (let i = 0; i < n; i++) { if (isOpt(list[i])) { hasOpt = true; break } }
+        if (hasOpt) {
+          const filtered = []
+          for (let i = 0; i < n; i++) {
+            const el = list[i]
+            if (isOpt(el)) {
+              if (el.value !== undefined) filtered.push(el.value)
+            } else {
+              filtered.push(el)
+            }
+          }
+          stack[++sp] = filtered
+        } else {
+          stack[++sp] = list
+        }
         break
       }
       case OP.BUILD_MAP: {
@@ -1152,6 +1175,78 @@ export function evaluate(program, activation) {
         if (isOpt(top) && top.value === undefined) {
           pc += offset
         }
+        break
+      }
+
+      case OP.OPT_INDEX: {
+        const key = stack[sp--]
+        const obj = stack[sp]
+        if (isOpt(obj) && obj.value === undefined) {
+          // none stays none
+        } else {
+          const target = isOpt(obj) ? obj.value : obj
+          if (isMap(target)) {
+            let found = false
+            for (const [k, v] of target) {
+              if (celEq(k, key) === true) { stack[sp] = { __celOptional: true, value: v }; found = true; break }
+            }
+            if (!found) stack[sp] = { __celOptional: true, value: undefined }
+          } else if (Array.isArray(target)) {
+            const i = typeof key === 'bigint' ? Number(key) : key
+            if (typeof i === 'number' && Number.isInteger(i) && i >= 0 && i < target.length) {
+              stack[sp] = { __celOptional: true, value: target[i] }
+            } else {
+              stack[sp] = { __celOptional: true, value: undefined }
+            }
+          } else {
+            stack[sp] = { __celOptional: true, value: undefined }
+          }
+        }
+        break
+      }
+
+      case OP.OPT_OF_NON_ZERO: {
+        const v = stack[sp]
+        const isZero = v === null || v === false || v === 0n || v === 0 || v === 0.0 || v === '' ||
+          (v instanceof Uint8Array && v.length === 0) ||
+          (Array.isArray(v) && v.length === 0) ||
+          (isMap(v) && v.size === 0)
+        stack[sp] = { __celOptional: true, value: isZero ? undefined : v }
+        break
+      }
+      case OP.OPT_HAS_VALUE: {
+        const v = stack[sp]
+        if (isError(v)) break // propagate error
+        if (isOpt(v)) {
+          stack[sp] = v.value !== undefined
+        } else {
+          // Non-optional values always "have a value"
+          stack[sp] = true
+        }
+        break
+      }
+
+      // ── Commutative logical operators ─────────────────────────────────────
+      case OP.LOGICAL_AND: {
+        const rhs = stack[sp--]
+        const lhs = stack[sp]
+        // CEL commutative: error && false = false, error && true = error
+        if (lhs === false || rhs === false) { stack[sp] = false }
+        else if (lhs === true && rhs === true) { stack[sp] = true }
+        else if (lhs === true) { stack[sp] = rhs }
+        else if (rhs === true) { stack[sp] = lhs }
+        else { stack[sp] = isError(lhs) ? lhs : rhs } // both errors → first
+        break
+      }
+      case OP.LOGICAL_OR: {
+        const rhs = stack[sp--]
+        const lhs = stack[sp]
+        // CEL commutative: error || true = true, error || false = error
+        if (lhs === true || rhs === true) { stack[sp] = true }
+        else if (lhs === false && rhs === false) { stack[sp] = false }
+        else if (lhs === false) { stack[sp] = rhs }
+        else if (rhs === false) { stack[sp] = lhs }
+        else { stack[sp] = isError(lhs) ? lhs : rhs } // both errors → first
         break
       }
 
