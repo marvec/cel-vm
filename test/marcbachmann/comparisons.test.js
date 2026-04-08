@@ -1,0 +1,26 @@
+import { describe, it } from 'node:test'
+import { assertCel } from '../helpers.js'
+
+describe('comparisons', () => {
+  it('1 == 1', () => assertCel('1 == 1', true))
+  it('1 == 2', () => assertCel('1 == 2', false))
+  it('1 != 2', () => assertCel('1 != 2', true))
+  it('1 != 1', () => assertCel('1 != 1', false))
+  it('1 < 2', () => assertCel('1 < 2', true))
+  it('2 < 1', () => assertCel('2 < 1', false))
+  it('1 <= 1', () => assertCel('1 <= 1', true))
+  it('1 <= 2', () => assertCel('1 <= 2', true))
+  it('2 <= 1', () => assertCel('2 <= 1', false))
+  it('2 > 1', () => assertCel('2 > 1', true))
+  it('1 > 2', () => assertCel('1 > 2', false))
+  it('1 >= 1', () => assertCel('1 >= 1', true))
+  it('2 >= 1', () => assertCel('2 >= 1', true))
+  it('1 >= 2', () => assertCel('1 >= 2', false))
+  it('"a" < "b"', () => assertCel('"a" < "b"', true))
+  it('"b" < "a"', () => assertCel('"b" < "a"', false))
+  it('"a" == "a"', () => assertCel('"a" == "a"', true))
+  it('"a" != "b"', () => assertCel('"a" != "b"', true))
+  it('false < true', () => assertCel('false < true', true))
+  it('null == null', () => assertCel('null == null', true))
+  it('1.0 < 2.0', () => assertCel('1.0 < 2.0', true))
+})

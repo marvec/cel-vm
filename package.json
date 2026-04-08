@@ -8,5 +8,7 @@
     "test:lexer": "bun test test/lexer.test.js",
     "bench": "bun run bench/compare.js"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "cel-js": "^0.8.2"
+  }
 }
