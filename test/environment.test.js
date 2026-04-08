@@ -199,3 +199,50 @@ describe('Environment integration — constants', () => {
     assert.equal(evaluate(bytecode, { score: 5n }), false)
   })
 })
+
+describe('Environment integration — custom functions', () => {
+  it('calls a custom global function', () => {
+    const env = new Environment()
+      .registerFunction('twice', 1, (x) => {
+        if (typeof x === 'bigint') return x * 2n
+        return x * 2
+      })
+
+    const config = env.toConfig()
+    const bytecode = compile('twice(21)', { env: config })
+    const result = evaluate(bytecode, {}, config.functionTable)
+    assert.equal(result, 42n)
+  })
+
+  it('calls a custom function with multiple args', () => {
+    const env = new Environment()
+      .registerFunction('add3', 3, (a, b, c) => a + b + c)
+
+    const config = env.toConfig()
+    const bytecode = compile('add3(1, 2, 3)', { env: config })
+    const result = evaluate(bytecode, {}, config.functionTable)
+    assert.equal(result, 6n)
+  })
+
+  it('custom function can access activation variables', () => {
+    const env = new Environment()
+      .registerFunction('negate', 1, (x) => -x)
+
+    const config = env.toConfig()
+    const bytecode = compile('negate(val)', { env: config })
+    assert.equal(evaluate(bytecode, { val: 5n }, config.functionTable), -5n)
+  })
+
+  it('custom function combined with built-in operators', () => {
+    const env = new Environment()
+      .registerFunction('square', 1, (x) => x * x)
+
+    const config = env.toConfig()
+    const bytecode = compile('square(3) + square(4)', { env: config })
+    assert.equal(evaluate(bytecode, {}, config.functionTable), 25n)
+  })
+
+  it('unknown function still throws CompileError', () => {
+    assert.throws(() => compile('unknown(1)'), /Unknown function/)
+  })
+})

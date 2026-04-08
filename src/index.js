@@ -56,9 +56,9 @@ export function compile(src, options = {}) {
  * @param {object}     [activation] - variable bindings { name: value }
  * @returns {*} result value
  */
-export function evaluate(bytecode, activation) {
+export function evaluate(bytecode, activation, customFunctionTable) {
   const program = decode(bytecode)
-  return evalProgram(program, activation || {})
+  return evalProgram(program, activation || {}, customFunctionTable)
 }
 
 /**
@@ -88,7 +88,8 @@ export function toB64(bytecode) {
  * @param {object} [activation] - variable bindings
  * @returns {*} result value
  */
-export function run(src, activation) {
-  const bytecode = compile(src)
-  return evaluate(bytecode, activation || {})
+export function run(src, activation, options) {
+  const bytecode = compile(src, options)
+  const functionTable = options && options.env ? options.env.functionTable : undefined
+  return evaluate(bytecode, activation || {}, functionTable)
 }

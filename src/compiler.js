@@ -680,6 +680,17 @@ export function compile(ast, options = {}) {
       return
     }
 
+    // Custom functions from environment
+    if (env && env.customFunctions.has(name)) {
+      const { id, arity } = env.customFunctions.get(name)
+      if (args.length !== arity) {
+        throw new CompileError(`'${name}' expects ${arity} argument(s), got ${args.length}`)
+      }
+      for (const a of args) compileNode(a)
+      emit(OP.CALL, id, args.length)
+      return
+    }
+
     throw new CompileError(`Unknown function: '${name}'`)
   }
 
