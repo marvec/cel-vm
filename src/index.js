@@ -34,15 +34,18 @@ const cache = new Map()
  */
 export function compile(src, options = {}) {
   const useCache = options.cache !== false
-  if (useCache && cache.has(src)) return cache.get(src)
+  if (useCache && !options.env && cache.has(src)) return cache.get(src)
 
   const tokens  = tokenize(src)
   const ast     = parse(tokens)
   const checked = check(ast)
-  const program = compileAst(checked, { debugInfo: options.debugInfo || false })
+  const program = compileAst(checked, {
+    debugInfo: options.debugInfo || false,
+    env: options.env || null,
+  })
   const bytes   = encode(program)
 
-  if (useCache) cache.set(src, bytes)
+  if (useCache && !options.env) cache.set(src, bytes)
   return bytes
 }
 

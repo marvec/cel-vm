@@ -201,11 +201,14 @@ function collectVarNames(node, boundNames, out) {
  * @returns {{ consts, varTable, instrs, debugInfo }}
  */
 export function compile(ast, options = {}) {
-  const { debugInfo: emitDebug = false } = options
+  const { debugInfo: emitDebug = false, env = null } = options
 
   // ── 1. Collect external variables ─────────────────────────────────────────
+  const constantNames = env ? env.constants : new Map()
   const varNameSet = new Set()
   collectVarNames(ast, new Set(), varNameSet)
+  // Remove constants from var table (they are compile-time substitutions)
+  for (const name of constantNames.keys()) varNameSet.delete(name)
   const varTable = Array.from(varNameSet).sort()
   const varIndex = new Map(varTable.map((n, i) => [n, i]))
 
@@ -325,6 +328,11 @@ export function compile(ast, options = {}) {
           } else {
             emit(OP.LOAD_VAR, IDX_ACCU)
           }
+        } else if (env && env.constants.has(name)) {
+          // Compile-time constant substitution
+          const { tag, value } = env.constants.get(name)
+          const idx = addConst(tag, value)
+          emit(OP.PUSH_CONST, idx)
         } else {
           const idx = varIndex.get(name)
           if (idx === undefined) {

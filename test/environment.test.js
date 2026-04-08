@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { Environment } from '../src/environment.js'
+import { compile, evaluate, CompileError } from '../src/index.js'
 
 describe('Environment', () => {
   it('creates an empty environment', () => {
@@ -166,5 +167,35 @@ describe('Variable declarations', () => {
     const config = env.toConfig()
     // No declared vars (still permissive for non-constant variables)
     assert.equal(config.declaredVars, null)
+  })
+})
+
+describe('Environment integration — constants', () => {
+  it('compiles and evaluates an expression with a constant', () => {
+    const env = new Environment()
+      .registerConstant('maxAge', 'int', 100n)
+
+    const bytecode = compile('maxAge + 1', { env: env.toConfig() })
+    const result = evaluate(bytecode, {})
+    assert.equal(result, 101n)
+  })
+
+  it('constant takes precedence over activation variable', () => {
+    const env = new Environment()
+      .registerConstant('x', 'int', 42n)
+
+    const bytecode = compile('x', { env: env.toConfig() })
+    // Even if activation provides x, the constant wins (it's baked into bytecode)
+    const result = evaluate(bytecode, { x: 999n })
+    assert.equal(result, 42n)
+  })
+
+  it('mixes constants and variables', () => {
+    const env = new Environment()
+      .registerConstant('threshold', 'int', 10n)
+
+    const bytecode = compile('score > threshold', { env: env.toConfig() })
+    assert.equal(evaluate(bytecode, { score: 15n }), true)
+    assert.equal(evaluate(bytecode, { score: 5n }), false)
   })
 })
