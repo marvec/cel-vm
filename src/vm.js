@@ -624,6 +624,39 @@ function callBuiltin(id, argc, stack, sp) {
       return celError('math.abs() requires numeric arg')
     }
 
+    case BUILTIN.MATH_GREATEST: {
+      if (argc === 1) {
+        const v = stack[sp]
+        if (isList(v)) {
+          if (v.length === 0) return celError('math.greatest() requires at least one arg')
+          return v.reduce((a, b) => celLt(b, a) === true ? a : b)
+        }
+        return v
+      }
+      let best = stack[sp - (argc - 1)]
+      for (let i = 1; i < argc; i++) {
+        const v = stack[sp - (argc - 1) + i]
+        if (celLt(best, v) === true) best = v
+      }
+      return best
+    }
+    case BUILTIN.MATH_LEAST: {
+      if (argc === 1) {
+        const v = stack[sp]
+        if (isList(v)) {
+          if (v.length === 0) return celError('math.least() requires at least one arg')
+          return v.reduce((a, b) => celLt(a, b) === true ? a : b)
+        }
+        return v
+      }
+      let best = stack[sp - (argc - 1)]
+      for (let i = 1; i < argc; i++) {
+        const v = stack[sp - (argc - 1) + i]
+        if (celLt(v, best) === true) best = v
+      }
+      return best
+    }
+
     default:
       return celError(`unknown builtin id: ${id}`)
   }

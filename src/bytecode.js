@@ -47,6 +47,7 @@ export const BUILTIN = {
   MATH_MAX: 40, MATH_MIN: 41, MATH_ABS: 42,
   GET_DAY_OF_YEAR: 43, GET_MILLISECONDS: 44,
   DYN: 45,
+  MATH_GREATEST: 46, MATH_LEAST: 47,
 };
 
 // ---------------------------------------------------------------------------

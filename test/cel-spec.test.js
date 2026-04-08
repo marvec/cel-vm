@@ -1196,42 +1196,42 @@ describe('string_ext', () => {
 // ============================================================================
 describe('math_ext', () => {
   describe('greatest_int_result', () => {
-    it.skip('unary_negative', () => assertCel('math.greatest(-5)', -5n))
-    it.skip('unary_positive', () => assertCel('math.greatest(5)', 5n))
-    it.skip('binary_same_args', () => assertCel('math.greatest(1, 1)', 1n))
-    it.skip('binary_first_arg_greater', () => assertCel('math.greatest(3, -3)', 3n))
-    it.skip('binary_second_arg_greater', () => assertCel('math.greatest(-7, 5)', 5n))
+    it('unary_negative', () => assertCel('math.greatest(-5)', -5n))
+    it('unary_positive', () => assertCel('math.greatest(5)', 5n))
+    it('binary_same_args', () => assertCel('math.greatest(1, 1)', 1n))
+    it('binary_first_arg_greater', () => assertCel('math.greatest(3, -3)', 3n))
+    it('binary_second_arg_greater', () => assertCel('math.greatest(-7, 5)', 5n))
   })
 
   describe('greatest_double_result', () => {
-    it.skip('unary_negative', () => assertCel('math.greatest(-5.0)', -5.0))
-    it.skip('unary_positive', () => assertCel('math.greatest(5.0)', 5.0))
-    it.skip('binary_same_args', () => assertCel('math.greatest(1.0, 1.0)', 1.0))
-    it.skip('binary_first_arg_greater', () => assertCel('math.greatest(5.0, -7.0)', 5.0))
+    it('unary_negative', () => assertCel('math.greatest(-5.0)', -5.0))
+    it('unary_positive', () => assertCel('math.greatest(5.0)', 5.0))
+    it('binary_same_args', () => assertCel('math.greatest(1.0, 1.0)', 1.0))
+    it('binary_first_arg_greater', () => assertCel('math.greatest(5.0, -7.0)', 5.0))
   })
 
   describe('greatest_uint_result', () => {
-    it.skip('unary', () => assertCel('math.greatest(5u)', 5n))
-    it.skip('binary_same_args', () => assertCel('math.greatest(1u, 1u)', 1n))
+    it('unary', () => assertCel('math.greatest(5u)', 5n))
+    it('binary_same_args', () => assertCel('math.greatest(1u, 1u)', 1n))
   })
 
   describe('least_int_result', () => {
-    it.skip('unary_negative', () => assertCel('math.least(-5)', -5n))
-    it.skip('unary_positive', () => assertCel('math.least(5)', 5n))
-    it.skip('binary_same_args', () => assertCel('math.least(1, 1)', 1n))
-    it.skip('binary_first_arg_least', () => assertCel('math.least(-3, 3)', -3n))
-    it.skip('binary_second_arg_least', () => assertCel('math.least(5, -7)', -7n))
+    it('unary_negative', () => assertCel('math.least(-5)', -5n))
+    it('unary_positive', () => assertCel('math.least(5)', 5n))
+    it('binary_same_args', () => assertCel('math.least(1, 1)', 1n))
+    it('binary_first_arg_least', () => assertCel('math.least(-3, 3)', -3n))
+    it('binary_second_arg_least', () => assertCel('math.least(5, -7)', -7n))
   })
 
   describe('least_double_result', () => {
-    it.skip('unary_negative', () => assertCel('math.least(-5.5)', -5.5))
-    it.skip('unary_positive', () => assertCel('math.least(5.5)', 5.5))
-    it.skip('binary_same_args', () => assertCel('math.least(1.5, 1.5)', 1.5))
+    it('unary_negative', () => assertCel('math.least(-5.5)', -5.5))
+    it('unary_positive', () => assertCel('math.least(5.5)', 5.5))
+    it('binary_same_args', () => assertCel('math.least(1.5, 1.5)', 1.5))
   })
 
   describe('least_uint_result', () => {
-    it.skip('unary', () => assertCel('math.least(5u)', 5n))
-    it.skip('binary_same_args', () => assertCel('math.least(1u, 1u)', 1n))
+    it('unary', () => assertCel('math.least(5u)', 5n))
+    it('binary_same_args', () => assertCel('math.least(1u, 1u)', 1n))
   })
 
   describe('ceil', () => {

@@ -87,6 +87,8 @@ const MATH_BUILTINS = {
   math_max: BUILTIN.MATH_MAX,
   math_min: BUILTIN.MATH_MIN,
   math_abs: BUILTIN.MATH_ABS,
+  math_greatest: BUILTIN.MATH_GREATEST,
+  math_least: BUILTIN.MATH_LEAST,
 }
 
 // ---------------------------------------------------------------------------
