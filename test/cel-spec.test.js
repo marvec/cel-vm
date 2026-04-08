@@ -1133,8 +1133,8 @@ describe('string_ext', () => {
   })
 
   describe('ascii_casing', () => {
-    it.skip('lowerascii', () => assertCel("'TacoCat'.lowerAscii() == 'tacocat'", true))
-    it.skip('upperascii', () => assertCel("'tacoCat'.upperAscii() == 'TACOCAT'", true))
+    it('lowerascii', () => assertCel("'TacoCat'.lowerAscii() == 'tacocat'", true))
+    it('upperascii', () => assertCel("'tacoCat'.upperAscii() == 'TACOCAT'", true))
   })
 
   describe('replace', () => {
@@ -1159,13 +1159,13 @@ describe('string_ext', () => {
   })
 
   describe('join', () => {
-    it.skip('empty_separator', () => assertCel("['x', 'y'].join() == 'xy'", true))
-    it.skip('dash_separator', () => assertCel("['x', 'y'].join('-') == 'x-y'", true))
+    it('empty_separator', () => assertCel("['x', 'y'].join() == 'xy'", true))
+    it('dash_separator', () => assertCel("['x', 'y'].join('-') == 'x-y'", true))
   })
 
   describe('quote', () => {
-    it.skip('verbatim', () => assertCel('strings.quote("verbatim") == "\\"verbatim\\""', true))
-    it.skip('empty_quote', () => assertCel('strings.quote("")', '""'))
+    it('verbatim', () => assertCel('strings.quote("verbatim") == "\\"verbatim\\""', true))
+    it('empty_quote', () => assertCel('strings.quote("")', '""'))
   })
 
   describe('format', () => {

@@ -374,6 +374,11 @@ function callBuiltin(id, argc, stack, sp) {
       if (!isStr(recv) || !isStr(sub)) return celError('lastIndexOf() requires strings')
       return BigInt(recv.lastIndexOf(sub))
     }
+    case BUILTIN.STRINGS_QUOTE: {
+      const v = stack[sp]
+      if (!isStr(v)) return celError('strings.quote() requires string')
+      return '"' + v.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"'
+    }
 
     // --- Type conversions ---
     case BUILTIN.TO_INT: {

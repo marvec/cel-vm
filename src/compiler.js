@@ -84,6 +84,11 @@ const CALL_BUILTINS = {
   dyn:       BUILTIN.DYN,
 }
 
+// String namespace extensions (strings.quote, etc.)
+const STRINGS_BUILTINS = {
+  strings_quote: BUILTIN.STRINGS_QUOTE,
+}
+
 // Math extensions
 const MATH_BUILTINS = {
   math_max: BUILTIN.MATH_MAX,
@@ -712,6 +717,16 @@ export function compile(ast, options = {}) {
       if (mathId !== undefined) {
         for (const a of args) compileNode(a)
         emit(OP.CALL, mathId, args.length)
+        return
+      }
+    }
+
+    // strings.quote(x) as method call on strings namespace
+    if (receiver.type === 'Ident' && receiver.name === 'strings') {
+      const strId = STRINGS_BUILTINS[`strings_${method}`]
+      if (strId !== undefined) {
+        for (const a of args) compileNode(a)
+        emit(OP.CALL, strId, args.length)
         return
       }
     }
