@@ -3,6 +3,13 @@
 // Collects custom function, constant, and variable declarations.
 // Produces a plain config object consumed by compiler and VM.
 
+import { tokenize } from './lexer.js'
+import { parse } from './parser.js'
+import { check } from './checker.js'
+import { compile as compileAst } from './compiler.js'
+import { encode, decode } from './bytecode.js'
+import { evaluate as evalProgram } from './vm.js'
+
 // Const pool tags (must match bytecode.js / compiler.js)
 const TAG_NULL   = 0
 const TAG_BOOL   = 1
@@ -106,6 +113,47 @@ export class Environment {
    * Produce a plain config object for compiler and VM consumption.
    * @returns {{ constants, customFunctions, customMethods, declaredVars, functionTable }}
    */
+  /**
+   * Compile a CEL expression within this environment.
+   * @param {string} src
+   * @param {object} [options]
+   * @returns {Uint8Array}
+   */
+  compile(src, options = {}) {
+    const config = this.toConfig()
+    const tokens  = tokenize(src)
+    const ast     = parse(tokens)
+    const checked = check(ast)
+    const program = compileAst(checked, {
+      debugInfo: options.debugInfo || false,
+      env: config,
+    })
+    return encode(program)
+  }
+
+  /**
+   * Evaluate bytecode compiled within this environment.
+   * @param {Uint8Array} bytecode
+   * @param {object} [activation]
+   * @returns {*}
+   */
+  evaluate(bytecode, activation) {
+    const program = decode(bytecode)
+    const config = this.toConfig()
+    return evalProgram(program, activation || {}, config.functionTable)
+  }
+
+  /**
+   * Convenience: compile + evaluate in one call.
+   * @param {string} src
+   * @param {object} [activation]
+   * @returns {*}
+   */
+  run(src, activation) {
+    const bytecode = this.compile(src)
+    return this.evaluate(bytecode, activation)
+  }
+
   toConfig() {
     // Build ordered function table (array indexed by id - CUSTOM_ID_BASE)
     const functionTable = new Array(this._nextCustomId - CUSTOM_ID_BASE)

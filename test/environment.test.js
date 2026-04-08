@@ -335,3 +335,30 @@ describe('Environment integration — strict variable mode', () => {
     assert.equal(evaluate(bytecode, { x: 50n }), true)
   })
 })
+
+describe('Environment convenience API', () => {
+  it('env.compile() + env.evaluate()', () => {
+    const env = new Environment()
+      .registerConstant('bonus', 'int', 10n)
+      .registerFunction('twice', 1, x => x * 2n)
+
+    const bytecode = env.compile('twice(score) + bonus')
+    const result = env.evaluate(bytecode, { score: 5n })
+    assert.equal(result, 20n)
+  })
+
+  it('env.run() convenience method', () => {
+    const env = new Environment()
+      .registerFunction('greet', 1, name => `Hello, ${name}!`)
+
+    const result = env.run('greet(name)', { name: 'World' })
+    assert.equal(result, 'Hello, World!')
+  })
+
+  it('env.run() with no activation', () => {
+    const env = new Environment()
+      .registerConstant('answer', 'int', 42n)
+
+    assert.equal(env.run('answer'), 42n)
+  })
+})

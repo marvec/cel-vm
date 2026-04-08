@@ -18,6 +18,7 @@ export { ParseError }  from './parser.js'
 export { CheckError }  from './checker.js'
 export { CompileError } from './compiler.js'
 export { EvaluationError } from './vm.js'
+export { Environment } from './environment.js'
 
 // Compiled bytecode cache: source string → Uint8Array
 const cache = new Map()
