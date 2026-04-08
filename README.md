@@ -187,18 +187,20 @@ bun run bench/compare.js
 
 ## cel-spec Divergences
 
-| Area | cel-vm | cel-js | Reason |
-|------|--------|--------|--------|
-| **Proto messages** | Plain JS objects only | Same | No protobuf schema in JS runtimes |
-| **int64 precision** | Full 64-bit via `BigInt` | Uses `Number` (silent precision loss above 2^53) | cel-vm uses `BigInt` throughout |
-| **int64 overflow** | Detected (returns error) | No detection | cel-vm checks `[-2^63, 2^63-1]` after arithmetic |
-| **Commutative errors** | `error && true → true` | Throws immediately | cel-vm propagates errors as values |
-| **Regex** | JS `RegExp` | Not supported | Spec requires RE2; JS has no native RE2 |
-| **Timestamps** | Parse, accessors, arithmetic, comparisons | Not supported | Millisecond precision; nanoseconds and timezone-aware accessors deferred |
-| **Duration** | Parse, accessors, arithmetic, comparisons | Not supported | Duration accessors return total values (e.g. `getMinutes()` = total minutes) |
-| **Bytes** | `b"..."` → `Uint8Array` | Not supported | Full bytes literal support |
-| **Enums** | Not supported | Same | No proto schema to resolve enum names |
-| **String Unicode** | Code point semantics (`size()`, indexing, `substring()`, `indexOf()`, `lastIndexOf()`) | UTF-16 code units | cel-vm counts Unicode code points per cel-spec |
+| Area | cel-vm | cel-spec | Reason |
+|------|--------|----------|--------|
+| **Proto messages** | Plain JS objects only | Proto schema types | No protobuf schema in JS runtimes |
+| **int64 precision** | Full 64-bit via `BigInt` | Full 64-bit | cel-vm matches spec; cel-js uses `Number` (silent precision loss above 2^53) |
+| **int64 overflow** | Detected (returns error) | Detected | cel-vm checks `[-2^63, 2^63-1]` after arithmetic |
+| **uint negation/underflow** | Not detected | Error | `uint` and `int` are both `BigInt` at runtime — type distinction lost after compilation. `-(42u)` and `0u - 1u` silently produce negative BigInts |
+| **Commutative errors** | Partial — `error && false → false` ✓, `error && true → true` ✗ | `error && false → false`, `error && true → error` | Left-side errors are discarded by POP in `&&`/`\|\|` compilation. Needs `OP.LOGICAL_AND`/`OP.LOGICAL_OR` opcodes |
+| **Regex** | JS `RegExp` | RE2 | No native RE2 in JS; minor semantic differences possible |
+| **Timestamps** | Parse, accessors (inc. timezone-aware), arithmetic, comparisons | Full support | Millisecond precision; nanosecond precision not yet implemented |
+| **Duration** | Parse, accessors, arithmetic, comparisons | Full support | Duration accessors return total values per spec (e.g. `getMinutes()` = total minutes) |
+| **Bytes literals** | `b"..."` → `Uint8Array` | Full support | `\u`/`\U` escapes in bytes produce raw `charCodeAt` instead of UTF-8 encoding |
+| **Bytes comparison** | Not supported | `<`, `>`, `<=`, `>=` | Bytes ordering operators not implemented |
+| **Enums** | Not supported | Proto schema enums | No proto schema to resolve enum names |
+| **String `size()`** | UTF-16 code units | Codepoint count | `size()` uses JS `String.length`; differs for astral-plane characters. `charAt()` is codepoint-aware |
 
 ## Architecture
 
