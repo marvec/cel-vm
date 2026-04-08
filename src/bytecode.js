@@ -48,6 +48,8 @@ export const BUILTIN = {
   GET_DAY_OF_YEAR: 43, GET_MILLISECONDS: 44,
   DYN: 45,
   MATH_GREATEST: 46, MATH_LEAST: 47,
+  STRING_CHAR_AT: 48, STRING_LAST_INDEX_OF: 49,
+  STRINGS_QUOTE: 50,
 };
 
 // ---------------------------------------------------------------------------

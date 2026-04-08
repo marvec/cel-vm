@@ -360,6 +360,21 @@ function callBuiltin(id, argc, stack, sp) {
       }
     }
 
+    case BUILTIN.STRING_CHAR_AT: {
+      const idx = stack[sp]; const recv = stack[sp - 1]
+      if (!isStr(recv)) return celError('charAt() requires string receiver')
+      const i = typeof idx === 'bigint' ? Number(idx) : idx
+      const codepoints = [...recv]
+      if (i < 0 || i > codepoints.length) return celError(`charAt: index ${i} out of range for string of length ${codepoints.length}`)
+      if (i === codepoints.length) return ''
+      return codepoints[i]
+    }
+    case BUILTIN.STRING_LAST_INDEX_OF: {
+      const sub = stack[sp]; const recv = stack[sp - 1]
+      if (!isStr(recv) || !isStr(sub)) return celError('lastIndexOf() requires strings')
+      return BigInt(recv.lastIndexOf(sub))
+    }
+
     // --- Type conversions ---
     case BUILTIN.TO_INT: {
       const v = stack[sp]

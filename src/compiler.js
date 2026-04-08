@@ -52,6 +52,8 @@ const METHOD_BUILTINS = {
   trim:       BUILTIN.STRING_TRIM,
   replace:    BUILTIN.STRING_REPLACE,
   join:       BUILTIN.STRING_JOIN,
+  charAt:     BUILTIN.STRING_CHAR_AT,
+  lastIndexOf: BUILTIN.STRING_LAST_INDEX_OF,
   // Timestamp / duration methods
   getFullYear:    BUILTIN.GET_FULL_YEAR,
   getMonth:       BUILTIN.GET_MONTH,

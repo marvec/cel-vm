@@ -1111,9 +1111,9 @@ describe('fields', () => {
 // ============================================================================
 describe('string_ext', () => {
   describe('char_at', () => {
-    it.skip('middle_index', () => assertCel("'tacocat'.charAt(3)", 'o'))
-    it.skip('end_index', () => assertCel("'tacocat'.charAt(7)", ''))
-    it.skip('multiple', () => assertCel("'\u00a9\u03b1T'.charAt(0) == '\u00a9' && '\u00a9\u03b1T'.charAt(1) == '\u03b1' && '\u00a9\u03b1T'.charAt(2) == 'T'", true))
+    it('middle_index', () => assertCel("'tacocat'.charAt(3)", 'o'))
+    it('end_index', () => assertCel("'tacocat'.charAt(7)", ''))
+    it('multiple', () => assertCel("'\u00a9\u03b1T'.charAt(0) == '\u00a9' && '\u00a9\u03b1T'.charAt(1) == '\u03b1' && '\u00a9\u03b1T'.charAt(2) == 'T'", true))
   })
 
   describe('index_of', () => {
@@ -1126,10 +1126,10 @@ describe('string_ext', () => {
   })
 
   describe('last_index_of', () => {
-    it.skip('empty_string', () => assertCel("''.lastIndexOf('@@') == -1", true))
-    it.skip('empty_argument', () => assertCel("'tacocat'.lastIndexOf('') == 7", true))
-    it.skip('string', () => assertCel("'tacocat'.lastIndexOf('at') == 5", true))
-    it.skip('string_nomatch', () => assertCel("'tacocat'.lastIndexOf('none') == -1", true))
+    it('empty_string', () => assertCel("''.lastIndexOf('@@') == -1", true))
+    it('empty_argument', () => assertCel("'tacocat'.lastIndexOf('') == 7", true))
+    it('string', () => assertCel("'tacocat'.lastIndexOf('at') == 5", true))
+    it('string_nomatch', () => assertCel("'tacocat'.lastIndexOf('none') == -1", true))
   })
 
   describe('ascii_casing', () => {
@@ -1181,12 +1181,12 @@ describe('string_ext', () => {
   })
 
   describe('value_errors', () => {
-    it.skip('charat_out_of_range', () => assertCelError("'tacocat'.charAt(30) == ''"))
+    it('charat_out_of_range', () => assertCelError("'tacocat'.charAt(30) == ''"))
     it.skip('substring_out_of_range', () => assertCelError("'tacocat'.substring(40) == 'cat'"))
   })
 
   describe('type_errors', () => {
-    it.skip('charat_invalid_type', () => assertCelError("42.charAt(2) == ''"))
+    it('charat_invalid_type', () => assertCelError("42.charAt(2) == ''"))
     it.skip('split_invalid_type', () => assertCelError("42.split('2') == ['4']"))
   })
 })
