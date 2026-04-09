@@ -26,8 +26,8 @@ const TAG_DOUBLE = 4
 const TAG_STRING = 5
 const TAG_BYTES  = 6
 
-// First custom function BUILTIN ID (0–53 reserved for builtins)
-const CUSTOM_ID_BASE = 64
+// First custom function BUILTIN ID (0–127 reserved for builtins)
+const CUSTOM_ID_BASE = 128
 
 const TYPE_TAGS = {
   int:    TAG_INT64,
@@ -51,12 +51,15 @@ export class Environment {
    */
   constructor(options = {}) {
     this._constants = new Map()       // name → {tag, value}
-    this._functions = new Map()       // name → {id, impl, arity}
-    this._methods = new Map()         // name → {id, impl, arity}
+    this._functions = new Map()       // name → [{id, impl, arity}]  (overloads)
+    this._methods = new Map()         // name → [{id, impl, arity}]  (overloads)
     this._declaredVars = null         // null = permissive; Map = strict
     this._nextCustomId = CUSTOM_ID_BASE
     this._debug = false
     this._limits = options.limits || null
+    this._cache = new Map()           // source string → Uint8Array
+    this._configDirty = true          // invalidate cache on registration
+    this._cachedConfig = null
   }
 
   /**
@@ -82,6 +85,7 @@ export class Environment {
     const tag = TYPE_TAGS[type]
     if (tag === undefined) throw new EnvironmentError(`Unknown constant type: '${type}'`)
     this._constants.set(name, { tag, value })
+    this._invalidate()
     return this
   }
 
@@ -94,11 +98,17 @@ export class Environment {
    */
   registerFunction(name, arity, impl) {
     if (typeof impl !== 'function') throw new EnvironmentError(`impl for '${name}' must be a function`)
-    if (this._functions.has(name) || this._constants.has(name)) {
-      throw new EnvironmentError(`'${name}' is already registered`)
+    if (this._constants.has(name)) {
+      throw new EnvironmentError(`'${name}' is already registered as a constant`)
+    }
+    const overloads = this._functions.get(name) || []
+    if (overloads.some(o => o.arity === arity)) {
+      throw new EnvironmentError(`'${name}' with arity ${arity} is already registered`)
     }
     const id = this._nextCustomId++
-    this._functions.set(name, { id, impl, arity })
+    overloads.push({ id, impl, arity })
+    this._functions.set(name, overloads)
+    this._invalidate()
     return this
   }
 
@@ -111,11 +121,14 @@ export class Environment {
    */
   registerMethod(name, arity, impl) {
     if (typeof impl !== 'function') throw new EnvironmentError(`impl for '${name}' must be a function`)
-    if (this._methods.has(name)) {
-      throw new EnvironmentError(`method '${name}' is already registered`)
+    const overloads = this._methods.get(name) || []
+    if (overloads.some(o => o.arity === arity)) {
+      throw new EnvironmentError(`method '${name}' with arity ${arity} is already registered`)
     }
     const id = this._nextCustomId++
-    this._methods.set(name, { id, impl, arity })
+    overloads.push({ id, impl, arity })
+    this._methods.set(name, overloads)
+    this._invalidate()
     return this
   }
 
@@ -133,13 +146,17 @@ export class Environment {
       throw new EnvironmentError(`variable '${name}' is already registered`)
     }
     this._declaredVars.set(name, type)
+    this._invalidate()
     return this
   }
 
-  /**
-   * Produce a plain config object for compiler and VM consumption.
-   * @returns {{ constants, customFunctions, customMethods, declaredVars, functionTable }}
-   */
+  /** @private Invalidate caches when declarations change. */
+  _invalidate() {
+    this._cache.clear()
+    this._configDirty = true
+    this._cachedConfig = null
+  }
+
   /**
    * Compile a CEL expression within this environment.
    * @param {string} src
@@ -147,6 +164,9 @@ export class Environment {
    * @returns {Uint8Array}
    */
   compile(src, options = {}) {
+    const useCache = options.cache !== false
+    if (useCache && this._cache.has(src)) return this._cache.get(src)
+
     const config = this.toConfig()
     const tokens  = tokenize(src)
     const ast     = parse(tokens, this._limits)
@@ -155,7 +175,10 @@ export class Environment {
       debugInfo: this._debug || options.debugInfo || false,
       env: config,
     })
-    return encode(program)
+    const bytes = encode(program)
+
+    if (useCache) this._cache.set(src, bytes)
+    return bytes
   }
 
   /**
@@ -183,16 +206,22 @@ export class Environment {
   }
 
   toConfig() {
+    if (!this._configDirty && this._cachedConfig) return this._cachedConfig
+
     // Build ordered function table (array indexed by id - CUSTOM_ID_BASE)
     const functionTable = new Array(this._nextCustomId - CUSTOM_ID_BASE)
-    for (const { id, impl } of this._functions.values()) {
-      functionTable[id - CUSTOM_ID_BASE] = impl
+    for (const overloads of this._functions.values()) {
+      for (const { id, impl } of overloads) {
+        functionTable[id - CUSTOM_ID_BASE] = impl
+      }
     }
-    for (const { id, impl } of this._methods.values()) {
-      functionTable[id - CUSTOM_ID_BASE] = impl
+    for (const overloads of this._methods.values()) {
+      for (const { id, impl } of overloads) {
+        functionTable[id - CUSTOM_ID_BASE] = impl
+      }
     }
 
-    return {
+    this._cachedConfig = {
       constants: new Map(this._constants),
       customFunctions: new Map(this._functions),
       customMethods: new Map(this._methods),
@@ -200,5 +229,7 @@ export class Environment {
       functionTable,
       limits: this._limits,
     }
+    this._configDirty = false
+    return this._cachedConfig
   }
 }

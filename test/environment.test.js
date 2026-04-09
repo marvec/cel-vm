@@ -64,10 +64,11 @@ describe('Custom functions', () => {
     env.registerFunction('isAdult', 1, (age) => age >= 18n)
     const config = env.toConfig()
     assert.equal(config.customFunctions.size, 1)
-    const fn = config.customFunctions.get('isAdult')
-    assert.equal(fn.arity, 1)
-    assert.equal(fn.id, 64)
-    assert.equal(typeof fn.impl, 'function')
+    const overloads = config.customFunctions.get('isAdult')
+    assert.equal(overloads.length, 1)
+    assert.equal(overloads[0].arity, 1)
+    assert.equal(overloads[0].id, 128)
+    assert.equal(typeof overloads[0].impl, 'function')
   })
 
   it('registers multiple functions with sequential IDs', () => {
@@ -75,14 +76,33 @@ describe('Custom functions', () => {
       .registerFunction('foo', 1, x => x)
       .registerFunction('bar', 2, (a, b) => a + b)
     const config = env.toConfig()
-    assert.equal(config.customFunctions.get('foo').id, 64)
-    assert.equal(config.customFunctions.get('bar').id, 65)
+    assert.equal(config.customFunctions.get('foo')[0].id, 128)
+    assert.equal(config.customFunctions.get('bar')[0].id, 129)
   })
 
-  it('rejects duplicate function names', () => {
+  it('rejects duplicate function name+arity', () => {
     const env = new Environment()
     env.registerFunction('foo', 1, x => x)
     assert.throws(() => env.registerFunction('foo', 1, x => x), EnvironmentError)
+  })
+
+  it('allows same function name with different arity (overloads)', () => {
+    const env = new Environment()
+      .registerFunction('format', 1, (s) => String(s))
+      .registerFunction('format', 2, (s, fmt) => `${fmt}: ${s}`)
+    const config = env.toConfig()
+    const overloads = config.customFunctions.get('format')
+    assert.equal(overloads.length, 2)
+    assert.equal(overloads[0].arity, 1)
+    assert.equal(overloads[1].arity, 2)
+  })
+
+  it('dispatches overloaded functions by arity', () => {
+    const env = new Environment()
+      .registerFunction('fmt', 1, (s) => `[${s}]`)
+      .registerFunction('fmt', 2, (s, n) => `[${s}:${n}]`)
+    assert.equal(env.run('fmt("hi")'), '[hi]')
+    assert.equal(env.run('fmt("hi", 42)'), '[hi:42]')
   })
 
   it('rejects non-function impl', () => {
@@ -108,9 +128,18 @@ describe('Custom methods', () => {
     env.registerMethod('double', 0, (receiver) => receiver + receiver)
     const config = env.toConfig()
     assert.equal(config.customMethods.size, 1)
-    const m = config.customMethods.get('double')
-    assert.equal(m.arity, 0) // arity excludes receiver
-    assert.equal(m.id, 64)
+    const overloads = config.customMethods.get('double')
+    assert.equal(overloads.length, 1)
+    assert.equal(overloads[0].arity, 0) // arity excludes receiver
+    assert.equal(overloads[0].id, 128)
+  })
+
+  it('allows method overloads by arity', () => {
+    const env = new Environment()
+      .registerMethod('pad', 0, (r) => ` ${r} `)
+      .registerMethod('pad', 1, (r, ch) => `${ch}${r}${ch}`)
+    assert.equal(env.run('"hi".pad()'), ' hi ')
+    assert.equal(env.run('"hi".pad("*")'), '*hi*')
   })
 
   it('functions and methods share the ID space', () => {
@@ -118,8 +147,8 @@ describe('Custom methods', () => {
       .registerFunction('foo', 1, x => x)
       .registerMethod('bar', 0, r => r)
     const config = env.toConfig()
-    assert.equal(config.customFunctions.get('foo').id, 64)
-    assert.equal(config.customMethods.get('bar').id, 65)
+    assert.equal(config.customFunctions.get('foo')[0].id, 128)
+    assert.equal(config.customMethods.get('bar')[0].id, 129)
   })
 
   it('methods appear in function table', () => {

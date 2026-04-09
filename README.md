@@ -211,9 +211,9 @@ bun run bench/compare.js
 
 ## cel-spec Conformance
 
-**1335 / 1537 tests passing (86.9%)**. All 315 marcbachmann/cel-js compatibility tests pass (100%).
+**1434 / 1583 tests passing (90.6%)**. 911 / 1060 cel-spec conformance tests (86.0%). All 315 marcbachmann/cel-js compatibility tests pass (100%).
 
-202 cel-spec tests are skipped — see `docs/plans/2026-04-08-006-feat-skipped-test-gap-analysis-plan.md` for the full breakdown and implementation roadmap.
+149 cel-spec tests are skipped — see `docs/plans/2026-04-08-006-feat-skipped-test-gap-analysis-plan.md` for the full breakdown and implementation roadmap.
 
 ### Divergences
 

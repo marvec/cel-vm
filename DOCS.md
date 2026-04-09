@@ -108,7 +108,7 @@ Constants take precedence over activation variables with the same name.
 
 ### `env.registerFunction(name, arity, impl)`
 
-Register a custom global function callable from CEL expressions.
+Register a custom global function callable from CEL expressions. Functions can be overloaded by arity (same name, different argument count).
 
 ```js
 env.registerFunction('isAdult', 1, (age) => age >= 18n)
@@ -126,9 +126,17 @@ env.registerFunction('clamp', 3, (val, lo, hi) => {
 
 **Note:** Custom function names must not conflict with built-in functions (`int`, `uint`, `double`, `string`, `bool`, `type`, `size`, `timestamp`, `duration`).
 
+**Overloads:** Register the same name with different arities:
+
+```js
+env.registerFunction('format', 1, (s) => String(s))
+env.registerFunction('format', 2, (s, fmt) => `${fmt}: ${s}`)
+// format("hi") → "[hi]", format("hi", 42) → "[hi:42]"
+```
+
 ### `env.registerMethod(name, arity, impl)`
 
-Register a custom method callable on any receiver value.
+Register a custom method callable on any receiver value. Methods can be overloaded by arity.
 
 ```js
 env.registerMethod('reverse', 0, (receiver) => {
@@ -220,8 +228,8 @@ const result = evaluate(bytecode, { x: 1n }, config.functionTable)
 ```js
 {
   constants: Map<string, {tag, value}>,
-  customFunctions: Map<string, {id, impl, arity}>,
-  customMethods: Map<string, {id, impl, arity}>,
+  customFunctions: Map<string, [{id, impl, arity}]>,  // array of overloads
+  customMethods: Map<string, [{id, impl, arity}]>,    // array of overloads
   declaredVars: Map<string, string> | null,
   functionTable: Function[],
 }

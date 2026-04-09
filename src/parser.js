@@ -217,8 +217,8 @@ export function parse(tokens, limits) {
     if (check(TT.MINUS)) {
       const tok = advance()
       const operand = parseUnary()
-      // Fold unary minus directly into numeric literals
-      if (operand.type === 'IntLit')   return countNode({ type: 'IntLit',   value: -operand.value, line: tok.line, col: tok.col })
+      // Fold unary minus directly into numeric literals (skip if result overflows int64)
+      if (operand.type === 'IntLit' && -operand.value >= -(2n ** 63n) && -operand.value <= 2n ** 63n - 1n)   return countNode({ type: 'IntLit',   value: -operand.value, line: tok.line, col: tok.col })
       if (operand.type === 'FloatLit') return countNode({ type: 'FloatLit', value: -operand.value, line: tok.line, col: tok.col })
       return countNode({ type: 'Unary', op: '-', operand, line: tok.line, col: tok.col })
     }

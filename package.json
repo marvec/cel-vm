@@ -3,10 +3,15 @@
   "version": "0.1.0",
   "description": "High-performance CEL (Common Expression Language) evaluator using a bytecode VM — compile once, evaluate many times",
   "type": "module",
+  "sideEffects": false,
   "main": "./src/index.js",
   "exports": {
-    ".": "./src/index.js"
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.js"
+    }
   },
+  "types": "./src/index.d.ts",
   "bin": {
     "cel": "./bin/cel.js"
   },

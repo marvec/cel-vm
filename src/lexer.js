@@ -179,15 +179,103 @@ export function tokenize(src) {
   }
 
   // Scan a quoted bytes literal. Returns Uint8Array.
+  // In byte literals, \xHH and octal escapes produce raw bytes,
+  // while \uHHHH, \UHHHHHHHH, and literal source characters are UTF-8 encoded.
   function scanBytes(quote, triple, raw) {
-    const str = scanString(quote, triple, raw)
-    const bytes = new Uint8Array(str.length)
-    for (let i = 0; i < str.length; i++) {
-      const code = str.charCodeAt(i)
-      if (code > 255) err('byte value out of range')
-      bytes[i] = code
+    const parts = [] // each element: number (raw byte) or string (to UTF-8 encode)
+    while (pos < src.length) {
+      if (triple) {
+        if (src[pos] === quote && src[pos+1] === quote && src[pos+2] === quote) {
+          pos += 3; col += 3
+          break
+        }
+      } else {
+        if (src[pos] === quote) {
+          pos++; col++
+          break
+        }
+        if (src[pos] === '\n') err('unterminated string literal')
+      }
+
+      if (src[pos] === '\\' && !raw) {
+        pos++; col++
+        const ch = src[pos]; pos++; col++
+        switch (ch) {
+          case '\\': parts.push(0x5C); break
+          case quote: parts.push(quote.charCodeAt(0)); break
+          case '"':  parts.push(0x22); break
+          case "'":  parts.push(0x27); break
+          case 'n':  parts.push(0x0A); break
+          case 'r':  parts.push(0x0D); break
+          case 't':  parts.push(0x09); break
+          case 'a':  parts.push(0x07); break
+          case 'b':  parts.push(0x08); break
+          case 'f':  parts.push(0x0C); break
+          case 'v':  parts.push(0x0B); break
+          case 'x': {
+            const h1 = src[pos]; const h2 = src[pos + 1]
+            if (!isHex(h1) || !isHex(h2)) err('invalid \\x escape')
+            pos += 2; col += 2
+            parts.push(parseInt(h1 + h2, 16))
+            break
+          }
+          case 'u': {
+            const hex = src.slice(pos, pos + 4)
+            if (hex.length < 4 || !isHexStr(hex)) err('invalid \\u escape')
+            pos += 4; col += 4
+            parts.push(String.fromCodePoint(parseInt(hex, 16)))
+            break
+          }
+          case 'U': {
+            const hex = src.slice(pos, pos + 8)
+            if (hex.length < 8 || !isHexStr(hex)) err('invalid \\U escape')
+            pos += 8; col += 8
+            const cp = parseInt(hex, 16)
+            if (cp > 0x10FFFF) err('code point out of range in \\U escape')
+            parts.push(String.fromCodePoint(cp))
+            break
+          }
+          default: {
+            if (isOctal(ch)) {
+              let oct = ch
+              if (isOctal(src[pos])) { oct += src[pos++]; col++ }
+              if (isOctal(src[pos])) { oct += src[pos++]; col++ }
+              const val = parseInt(oct, 8)
+              if (val > 255) err('octal escape out of range')
+              parts.push(val)
+            } else {
+              err(`invalid escape sequence \\${ch}`)
+            }
+          }
+        }
+      } else {
+        const ch = src[pos]
+        if (ch === '\n') { line++; col = 1; pos++ } else { col++; pos++ }
+        parts.push(ch) // literal source char — will be UTF-8 encoded
+      }
     }
-    return bytes
+
+    // Build the Uint8Array: numbers are raw bytes, strings are UTF-8 encoded
+    const encoder = new TextEncoder()
+    const chunks = []
+    let totalLen = 0
+    for (const p of parts) {
+      if (typeof p === 'number') {
+        chunks.push(new Uint8Array([p]))
+        totalLen += 1
+      } else {
+        const encoded = encoder.encode(p)
+        chunks.push(encoded)
+        totalLen += encoded.length
+      }
+    }
+    const result = new Uint8Array(totalLen)
+    let offset = 0
+    for (const chunk of chunks) {
+      result.set(chunk, offset)
+      offset += chunk.length
+    }
+    return result
   }
 
   while (pos < src.length) {
