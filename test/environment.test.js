@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { Environment } from '../src/environment.js'
+import { Environment, EnvironmentError } from '../src/environment.js'
 import { compile, evaluate, CompileError } from '../src/index.js'
 
 describe('Environment', () => {
@@ -45,7 +45,7 @@ describe('Environment', () => {
   it('rejects duplicate constant names', () => {
     const env = new Environment()
     env.registerConstant('x', 'int', 1n)
-    assert.throws(() => env.registerConstant('x', 'int', 2n), /already registered/)
+    assert.throws(() => env.registerConstant('x', 'int', 2n), EnvironmentError)
   })
 
   it('chains register calls fluently', () => {
@@ -81,12 +81,12 @@ describe('Custom functions', () => {
   it('rejects duplicate function names', () => {
     const env = new Environment()
     env.registerFunction('foo', 1, x => x)
-    assert.throws(() => env.registerFunction('foo', 1, x => x), /already registered/)
+    assert.throws(() => env.registerFunction('foo', 1, x => x), EnvironmentError)
   })
 
   it('rejects non-function impl', () => {
     const env = new Environment()
-    assert.throws(() => env.registerFunction('foo', 1, 'not-a-function'), /must be a function/)
+    assert.throws(() => env.registerFunction('foo', 1, 'not-a-function'), EnvironmentError)
   })
 
   it('builds function table in correct order', () => {
@@ -158,7 +158,7 @@ describe('Variable declarations', () => {
   it('rejects duplicate variable names', () => {
     const env = new Environment()
     env.registerVariable('x', 'int')
-    assert.throws(() => env.registerVariable('x', 'string'), /already registered/)
+    assert.throws(() => env.registerVariable('x', 'string'), EnvironmentError)
   })
 
   it('constants do not count as declared vars', () => {
