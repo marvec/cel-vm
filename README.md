@@ -158,11 +158,11 @@ cel eval 'Q0UBAAABAgAAAA...' --vars '{"x": 42}'
 
 ### String methods
 
-`contains()`, `startsWith()`, `endsWith()`, `matches()`, `size()`, `toLowerCase()` / `lowerAscii()`, `toUpperCase()` / `upperAscii()`, `trim()`, `split()`, `substring()`, `indexOf()`, `replace()`
+`contains()`, `startsWith()`, `endsWith()`, `matches()`, `size()`, `toLowerCase()` / `lowerAscii()`, `toUpperCase()` / `upperAscii()`, `trim()`, `split()`, `substring()`, `indexOf()`, `lastIndexOf()`, `charAt()`, `replace()`, `join()`, `format()`
 
 ### Built-in functions
 
-`size()`, `type()`, `int()`, `uint()`, `double()`, `string()`, `bool()`, `timestamp()`, `duration()`
+`size()`, `type()`, `int()`, `uint()`, `double()`, `string()`, `bool()`, `bytes()`, `timestamp()`, `duration()`, `dyn()`
 
 ### Macros
 
@@ -170,7 +170,7 @@ cel eval 'Q0UBAAABAgAAAA...' --vars '{"x": 42}'
 
 ### Optional types
 
-`optional.of()`, `optional.none()`, `.hasValue()`, `.value()`, `.orValue()`, `.or()`
+`optional.of()`, `optional.none()`, `.hasValue()`, `.orValue()`, `optional.ofNonZero()` / `optional.ofNonZeroValue()`
 
 ### Timestamp methods
 
@@ -179,6 +179,14 @@ cel eval 'Q0UBAAABAgAAAA...' --vars '{"x": 42}'
 ### Duration methods
 
 `getHours()`, `getMinutes()`, `getSeconds()`, `getMilliseconds()`
+
+### Math extensions
+
+`math.greatest()`, `math.least()`, `math.max()`, `math.min()`, `math.abs()`, `math.ceil()`, `math.floor()`, `math.round()`, `math.trunc()`, `math.sign()`, `math.isNaN()`, `math.isInf()`, `math.isFinite()`, `math.bitAnd()`, `math.bitOr()`, `math.bitXor()`, `math.bitNot()`, `math.bitShiftLeft()`, `math.bitShiftRight()`
+
+### String extensions
+
+`strings.quote()`
 
 ### String literals
 
@@ -223,7 +231,7 @@ bun run bench/compare.js
 | **int64 precision** | Full 64-bit via `BigInt` | Full 64-bit | cel-vm matches spec; cel-js uses `Number` (silent precision loss above 2^53) |
 | **int64 overflow** | Detected (returns error) | Detected | cel-vm checks `[-2^63, 2^63-1]` after arithmetic |
 | **uint negation/underflow** | Not detected | Error | `uint` and `int` are both `BigInt` at runtime — type distinction lost after compilation. `-(42u)` and `0u - 1u` silently produce negative BigInts |
-| **Commutative errors** | Partial — `error && false → false` ✓, `error && true → true` ✗ | `error && false → false`, `error && true → error` | Left-side errors are discarded by POP in `&&`/`\|\|` compilation. Needs `OP.LOGICAL_AND`/`OP.LOGICAL_OR` opcodes |
+| **Commutative errors** | Partial — see Resolved section | `error && false → false`, `error && true → error` | `LOGICAL_AND`/`LOGICAL_OR` opcodes handle most cases; some edge cases remain |
 | **Regex** | JS `RegExp` | RE2 | No native RE2 in JS; minor semantic differences possible |
 | **Timestamps** | Parse, accessors (inc. timezone-aware), arithmetic, comparisons | Full support | Millisecond precision; nanosecond precision not yet implemented |
 | **Duration** | Parse, accessors, arithmetic, comparisons | Full support | Duration accessors return total values per spec (e.g. `getMinutes()` = total minutes) |
