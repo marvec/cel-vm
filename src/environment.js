@@ -33,12 +33,22 @@ const TYPE_TAGS = {
 }
 
 export class Environment {
-  constructor() {
+  /**
+   * @param {object} [options]
+   * @param {object} [options.limits] — parser limits for DoS protection
+   * @param {number} [options.limits.maxAstNodes]      — max AST nodes
+   * @param {number} [options.limits.maxDepth]          — max nesting depth
+   * @param {number} [options.limits.maxListElements]   — max list literal elements
+   * @param {number} [options.limits.maxMapEntries]     — max map literal entries
+   * @param {number} [options.limits.maxCallArguments]  — max function call arguments
+   */
+  constructor(options = {}) {
     this._constants = new Map()       // name → {tag, value}
     this._functions = new Map()       // name → {id, impl, arity}
     this._methods = new Map()         // name → {id, impl, arity}
     this._declaredVars = null         // null = permissive; Map = strict
     this._nextCustomId = CUSTOM_ID_BASE
+    this._limits = options.limits || null
   }
 
   /**
@@ -122,7 +132,7 @@ export class Environment {
   compile(src, options = {}) {
     const config = this.toConfig()
     const tokens  = tokenize(src)
-    const ast     = parse(tokens)
+    const ast     = parse(tokens, this._limits)
     const checked = check(ast)
     const program = compileAst(checked, {
       debugInfo: options.debugInfo || false,
@@ -170,6 +180,7 @@ export class Environment {
       customMethods: new Map(this._methods),
       declaredVars: this._declaredVars ? new Map(this._declaredVars) : null,
       functionTable,
+      limits: this._limits,
     }
   }
 }
