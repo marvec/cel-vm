@@ -18,6 +18,7 @@ export { ParseError }  from './parser.js'
 export { CheckError }  from './checker.js'
 export { CompileError } from './compiler.js'
 export { EvaluationError } from './vm.js'
+export { Environment } from './environment.js'
 
 // Compiled bytecode cache: source string → Uint8Array
 const cache = new Map()
@@ -34,15 +35,18 @@ const cache = new Map()
  */
 export function compile(src, options = {}) {
   const useCache = options.cache !== false
-  if (useCache && cache.has(src)) return cache.get(src)
+  if (useCache && !options.env && cache.has(src)) return cache.get(src)
 
   const tokens  = tokenize(src)
   const ast     = parse(tokens)
   const checked = check(ast)
-  const program = compileAst(checked, { debugInfo: options.debugInfo || false })
+  const program = compileAst(checked, {
+    debugInfo: options.debugInfo || false,
+    env: options.env || null,
+  })
   const bytes   = encode(program)
 
-  if (useCache) cache.set(src, bytes)
+  if (useCache && !options.env) cache.set(src, bytes)
   return bytes
 }
 
@@ -53,9 +57,9 @@ export function compile(src, options = {}) {
  * @param {object}     [activation] - variable bindings { name: value }
  * @returns {*} result value
  */
-export function evaluate(bytecode, activation) {
+export function evaluate(bytecode, activation, customFunctionTable) {
   const program = decode(bytecode)
-  return evalProgram(program, activation || {})
+  return evalProgram(program, activation || {}, customFunctionTable)
 }
 
 /**
@@ -85,7 +89,8 @@ export function toB64(bytecode) {
  * @param {object} [activation] - variable bindings
  * @returns {*} result value
  */
-export function run(src, activation) {
-  const bytecode = compile(src)
-  return evaluate(bytecode, activation || {})
+export function run(src, activation, options) {
+  const bytecode = compile(src, options)
+  const functionTable = options && options.env ? options.env.functionTable : undefined
+  return evaluate(bytecode, activation || {}, functionTable)
 }

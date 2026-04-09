@@ -215,13 +215,25 @@ function collectVarNames(node, boundNames, out) {
  * @returns {{ consts, varTable, instrs, debugInfo }}
  */
 export function compile(ast, options = {}) {
-  const { debugInfo: emitDebug = false } = options
+  const { debugInfo: emitDebug = false, env = null } = options
 
   // ── 1. Collect external variables ─────────────────────────────────────────
+  const constantNames = env ? env.constants : new Map()
   const varNameSet = new Set()
   collectVarNames(ast, new Set(), varNameSet)
+  // Remove constants from var table (they are compile-time substitutions)
+  for (const name of constantNames.keys()) varNameSet.delete(name)
   const varTable = Array.from(varNameSet).sort()
   const varIndex = new Map(varTable.map((n, i) => [n, i]))
+
+  // ── 1b. Enforce strict variable declarations if env has declared vars ───
+  if (env && env.declaredVars) {
+    for (const name of varNameSet) {
+      if (!env.declaredVars.has(name) && !env.constants.has(name)) {
+        throw new CompileError(`Undeclared variable: '${name}'`)
+      }
+    }
+  }
 
   // ── 2. Constant pool ───────────────────────────────────────────────────────
   const consts = []
@@ -339,6 +351,11 @@ export function compile(ast, options = {}) {
           } else {
             emit(OP.LOAD_VAR, IDX_ACCU)
           }
+        } else if (env && env.constants.has(name)) {
+          // Compile-time constant substitution
+          const { tag, value } = env.constants.get(name)
+          const idx = addConst(tag, value)
+          emit(OP.PUSH_CONST, idx)
         } else {
           const idx = varIndex.get(name)
           if (idx === undefined) {
@@ -686,6 +703,17 @@ export function compile(ast, options = {}) {
       return
     }
 
+    // Custom functions from environment
+    if (env && env.customFunctions.has(name)) {
+      const { id, arity } = env.customFunctions.get(name)
+      if (args.length !== arity) {
+        throw new CompileError(`'${name}' expects ${arity} argument(s), got ${args.length}`)
+      }
+      for (const a of args) compileNode(a)
+      emit(OP.CALL, id, args.length)
+      return
+    }
+
     throw new CompileError(`Unknown function: '${name}'`)
   }
 
@@ -777,6 +805,18 @@ export function compile(ast, options = {}) {
       compileNode(receiver)
       for (const a of args) compileNode(a)
       emit(OP.CALL, builtinId, args.length + 1)
+      return
+    }
+
+    // Custom methods from environment
+    if (env && env.customMethods.has(method)) {
+      const { id, arity } = env.customMethods.get(method)
+      if (args.length !== arity) {
+        throw new CompileError(`method '${method}' expects ${arity} argument(s), got ${args.length}`)
+      }
+      compileNode(receiver)
+      for (const a of args) compileNode(a)
+      emit(OP.CALL, id, args.length + 1) // +1 for receiver
       return
     }
 

@@ -301,3 +301,39 @@ const bytecode2 = load(b64);
 `compile()` accepts an optional `{ debugInfo: true }` flag to embed source locations in the binary (used by error messages and future debuggers).
 
 `evaluate()` accepts an activation object whose keys correspond to the variable names referenced in the expression. Numeric values should be `BigInt` for CEL `int`/`uint` types, or `number` for `double`.
+
+---
+
+## Environment & Custom Functions
+
+The `Environment` class (`src/environment.js`) lets users extend cel-vm with custom functions, constants, and variable declarations.
+
+### Custom Function ID Scheme
+
+Built-in functions use BUILTIN IDs 0–53. Custom functions are assigned IDs starting at **64**, leaving room for ~10 more builtins. IDs are assigned sequentially in registration order. Functions and methods share the same ID space.
+
+### Split-Dispatch Strategy
+
+Custom functions reuse the existing `OP.CALL` opcode. The VM dispatch checks `id >= 64` and routes to a **separate** `callCustom()` function, keeping `callBuiltin()` completely untouched:
+
+```
+OP.CALL dispatch:
+  id < 64  → callBuiltin(id, argc, stack, sp)         // unchanged, monomorphic
+  id >= 64 → callCustom(id, argc, stack, sp, fnTable)  // separate function, separate JIT
+```
+
+This preserves V8's JIT profile for built-in function dispatch. The `id >= 64` branch is a cheap integer compare that V8's branch predictor learns is almost always false for built-in-only expressions.
+
+`callCustom()` uses arity-specific fast paths for 1–3 arguments (direct call, zero allocation). Only 4+ arguments require array allocation.
+
+### Constants as Compile-Time Substitutions
+
+When the compiler encounters an `Ident` node whose name is in the constant registry, it emits `PUSH_CONST` with the constant's value instead of `LOAD_VAR`. Constants are baked into bytecode — zero runtime cost.
+
+### Strict Variable Mode
+
+If any variables are declared via `registerVariable()`, the compiler validates that the expression only references declared variables or constants. If no variables are declared, the current permissive behavior is preserved.
+
+### Function Table
+
+The `Environment.toConfig()` method produces a `functionTable` array indexed by `id - 64`. This array is passed to `evaluate()` alongside the activation. The bytecode itself is portable (same binary format), but evaluation requires the matching function table.

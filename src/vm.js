@@ -373,6 +373,32 @@ function celHasField(obj, field) {
 }
 
 // ---------------------------------------------------------------------------
+// Custom function dispatch (IDs >= 64, separate from callBuiltin for JIT)
+// ---------------------------------------------------------------------------
+
+function callCustom(id, argc, stack, sp, functionTable) {
+  // Propagate error values from any argument
+  for (let i = 0; i < argc; i++) {
+    if (isError(stack[sp - i])) return stack[sp - i]
+  }
+
+  const fn = functionTable[id - 64]
+  if (!fn) return celError(`unknown custom function id: ${id}`)
+
+  // Fast paths for common arities (avoid Array allocation + spread)
+  switch (argc) {
+    case 1: return fn(stack[sp])
+    case 2: return fn(stack[sp - 1], stack[sp])
+    case 3: return fn(stack[sp - 2], stack[sp - 1], stack[sp])
+    default: {
+      const args = new Array(argc)
+      for (let i = 0; i < argc; i++) args[i] = stack[sp - (argc - 1 - i)]
+      return fn(...args)
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Builtin function dispatch
 // ---------------------------------------------------------------------------
 
@@ -1006,7 +1032,7 @@ const IDX_ACCU      = 0xFFFF
  * @param {object} activation - map of variable name → value
  * @returns {*} the result value
  */
-export function evaluate(program, activation) {
+export function evaluate(program, activation, customFunctionTable) {
   const { consts, varTable, instrs } = program
 
   // Build activation array (string → index resolved at compile time)
@@ -1271,7 +1297,9 @@ export function evaluate(program, activation) {
       case OP.CALL: {
         const builtinId = operands[0]
         const argc = operands[1]
-        const result = callBuiltin(builtinId, argc, stack, sp)
+        const result = builtinId >= 64
+          ? callCustom(builtinId, argc, stack, sp, customFunctionTable)
+          : callBuiltin(builtinId, argc, stack, sp)
         sp -= argc - 1
         stack[sp] = result
         break

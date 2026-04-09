@@ -94,6 +94,30 @@ import { LexError, ParseError, CheckError, CompileError, EvaluationError } from 
 
 All errors include descriptive messages with source location when available.
 
+### `Environment` — custom functions, constants, and variable declarations
+
+```js
+import { Environment } from 'cel-vm'
+
+const env = new Environment()
+  .registerConstant('minAge', 'int', 18n)
+  .registerFunction('hasRole', 2, (user, role) =>
+    Array.isArray(user.roles) && user.roles.includes(role)
+  )
+  .registerMethod('titleCase', 0, (s) =>
+    s.replace(/\b\w/g, c => c.toUpperCase())
+  )
+
+// Compile once, evaluate many times
+const policy = env.compile('user.age >= minAge && hasRole(user, "admin")')
+env.evaluate(policy, { user: { age: 25n, roles: ['admin'] } })  // → true
+
+// Or one-shot
+env.run('"hello world".titleCase()')  // → "Hello World"
+```
+
+See [DOCS.md](DOCS.md) for the full Environment API reference.
+
 ## CLI
 
 ```bash
@@ -219,13 +243,14 @@ bun run bench/compare.js
 The pipeline is strictly sequential: source → Lexer → Parser → Checker → Compiler → Bytecode → VM.
 
 ```
-src/lexer.js     — hand-written tokeniser
-src/parser.js    — recursive-descent, plain-object AST
-src/checker.js   — macro expansion + security validation
-src/compiler.js  — AST → bytecode; constant folding, variable pre-resolution
-src/bytecode.js  — binary encode/decode, Base64 serialisation
-src/vm.js        — while/switch dispatch loop (plain function, not a class)
-src/index.js     — public API
+src/lexer.js       — hand-written tokeniser
+src/parser.js      — recursive-descent, plain-object AST
+src/checker.js     — macro expansion + security validation
+src/compiler.js    — AST → bytecode; constant folding, variable pre-resolution
+src/bytecode.js    — binary encode/decode, Base64 serialisation
+src/vm.js          — while/switch dispatch loop (plain function, not a class)
+src/environment.js — Environment class (custom functions, constants, variable declarations)
+src/index.js       — public API
 ```
 
 See [IMPLEMENTATION.md](IMPLEMENTATION.md) for detailed design decisions.
