@@ -172,6 +172,17 @@ export class Environment {
   }
 
   /**
+   * Compile a CEL expression and return a callable function.
+   * @param {string} src
+   * @param {object} [options]
+   * @returns {(activation?: object) => *}
+   */
+  program(src, options) {
+    const bytecode = this.compile(src, options)
+    return (activation) => this.evaluate(bytecode, activation)
+  }
+
+  /**
    * Convenience: compile + evaluate in one call.
    * @param {string} src
    * @param {object} [activation]

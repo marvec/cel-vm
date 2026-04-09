@@ -4,6 +4,8 @@ High-performance [Common Expression Language](https://github.com/google/cel-spec
 
 **~24× faster** than [marcbachmann/cel-js](https://github.com/marcbachmann/cel-js) on repeated evaluation (12–47× depending on expression complexity).
 
+[API Reference](DOCS.md) · [Architecture](IMPLEMENTATION.md) · [License](LICENSE) · [Notices](NOTICES)
+
 ## Why
 
 CEL is Google's expression language for policy evaluation, access control, and data validation. Existing JavaScript implementations use tree-walking interpreters — they re-traverse the AST every time an expression is evaluated. That's fine for one-off use, but expensive when the same expression runs millions of times against different inputs (policy engines, rule engines, analytics pipelines).
@@ -33,7 +35,19 @@ run('age >= 18', { age: 25n })                 // → true
 run('name.startsWith("J")', { name: 'Jane' }) // → true
 ```
 
-`run()` compiles the expression, caches the bytecode, and evaluates it. On repeated calls with the same expression, compilation is skipped.
+`run()` compiles the expression, caches the bytecode, and evaluates it. On repeated calls with the same expression, compilation is skipped. See [DOCS.md](DOCS.md#runsrc-activation-options) for full parameter details.
+
+### `program(expr, options?)` — compile to a callable
+
+```js
+import { program } from 'cel-vm'
+
+const check = program('x > 0 && y < 100')
+check({ x: 10n, y: 5n })   // → true
+check({ x: -1n, y: 50n })  // → false
+```
+
+Compiles once, returns a function. This is the recommended API for repeated evaluation — same performance as `compile()` + `evaluate()`, less boilerplate. See [DOCS.md](DOCS.md#programsrc-options) for full parameter details.
 
 ### `compile(expr)` — compile to bytecode
 
@@ -54,7 +68,7 @@ evaluate(bytecode, { x: 10n, y: 5n })  // → 15n
 evaluate(bytecode, { x: 1n, y: 2n })   // → 3n
 ```
 
-This is the hot path. Pre-compile once, evaluate many times.
+This is the hot path. Pre-compile once, evaluate many times. Use `program()` for a more ergonomic wrapper around this pattern. See [DOCS.md](DOCS.md#compilesrc-options) for compile/evaluate parameter details.
 
 ### `toB64(bytecode)` / `load(base64)` — serialise and load
 
@@ -70,6 +84,8 @@ const b64 = toB64(bytecode)
 const loaded = load(b64)
 evaluate(loaded, { score: 95n })  // → true
 ```
+
+See [DOCS.md](DOCS.md#tob64bytecode--loadbase64) for full parameter details.
 
 ### Activation values
 
@@ -92,7 +108,7 @@ Pass variables as a plain object. Use the correct JavaScript types:
 import { LexError, ParseError, CheckError, CompileError, EvaluationError } from 'cel-vm'
 ```
 
-All errors include descriptive messages with source location when available.
+All errors include descriptive messages with source location when available. See [DOCS.md](DOCS.md#error-types) for the full list of error classes.
 
 ### `Environment` — custom functions, constants, and variable declarations
 
@@ -108,15 +124,24 @@ const env = new Environment()
     s.replace(/\b\w/g, c => c.toUpperCase())
   )
 
-// Compile once, evaluate many times
-const policy = env.compile('user.age >= minAge && hasRole(user, "admin")')
-env.evaluate(policy, { user: { age: 25n, roles: ['admin'] } })  // → true
+// Compile to a callable — recommended for repeated evaluation
+const policy = env.program('user.age >= minAge && hasRole(user, "admin")')
+policy({ user: { age: 25n, roles: ['admin'] } })  // → true
+policy({ user: { age: 16n, roles: [] } })          // → false
 
 // Or one-shot
 env.run('"hello world".titleCase()')  // → "Hello World"
+
+// Enable debug mode for source-mapped error locations
+const debug = new Environment().enableDebug()
+try {
+  debug.run('a / b', { a: 1n, b: 0n })
+} catch (e) {
+  console.log(e.message)  // "division by zero at 1:3"
+}
 ```
 
-See [DOCS.md](DOCS.md) for the full Environment API reference.
+See [DOCS.md](DOCS.md#environment-api) for the full Environment API reference.
 
 ## CLI
 
@@ -211,32 +236,21 @@ bun run bench/compare.js
 
 ## cel-spec Conformance
 
-**1335 / 1537 tests passing (86.9%)**. All 315 marcbachmann/cel-js compatibility tests pass (100%).
+**1406 / 1610 tests passing (87.3%)**. All 315 marcbachmann/cel-js compatibility tests pass (100%).
 
-202 cel-spec tests are skipped — see `docs/plans/2026-04-08-006-feat-skipped-test-gap-analysis-plan.md` for the full breakdown and implementation roadmap.
+202 cel-spec tests are skipped (proto messages, enums, and other features that require protobuf schema support). See `docs/plans/2026-04-08-006-feat-skipped-test-gap-analysis-plan.md` for the full breakdown and implementation roadmap.
 
 ### Divergences
 
 | Area | cel-vm | cel-spec | Reason |
 |------|--------|----------|--------|
-| **Proto messages** | Plain JS objects only | Proto schema types | No protobuf schema in JS runtimes |
-| **int64 precision** | Full 64-bit via `BigInt` | Full 64-bit | cel-vm matches spec; cel-js uses `Number` (silent precision loss above 2^53) |
-| **int64 overflow** | Detected (returns error) | Detected | cel-vm checks `[-2^63, 2^63-1]` after arithmetic |
+| **Proto messages / enums** | Plain JS objects only | Proto schema types | No protobuf schema in JS runtimes |
 | **uint negation/underflow** | Not detected | Error | `uint` and `int` are both `BigInt` at runtime — type distinction lost after compilation. `-(42u)` and `0u - 1u` silently produce negative BigInts |
-| **Commutative errors** | Partial — `error && false → false` ✓, `error && true → true` ✗ | `error && false → false`, `error && true → error` | Left-side errors are discarded by POP in `&&`/`\|\|` compilation. Needs `OP.LOGICAL_AND`/`OP.LOGICAL_OR` opcodes |
 | **Regex** | JS `RegExp` | RE2 | No native RE2 in JS; minor semantic differences possible |
-| **Timestamps** | Parse, accessors (inc. timezone-aware), arithmetic, comparisons | Full support | Millisecond precision; nanosecond precision not yet implemented |
-| **Duration** | Parse, accessors, arithmetic, comparisons | Full support | Duration accessors return total values per spec (e.g. `getMinutes()` = total minutes) |
+| **Timestamps** | Full support | Full support | Millisecond precision; nanosecond precision not yet implemented |
 | **Bytes literals** | `b"..."` → `Uint8Array` | Full support | `\u`/`\U` escapes in bytes produce raw `charCodeAt` instead of UTF-8 encoding |
 | **Bytes comparison** | Not supported | `<`, `>`, `<=`, `>=` | Bytes ordering operators not implemented |
-| **Enums** | Not supported | Proto schema enums | No proto schema to resolve enum names |
 | **Type identifiers** | `type()` returns string | First-class type values | `bool`, `int`, etc. are not resolvable as identifiers |
-
-### Resolved (previously divergent)
-
-- **String `size()`** — now uses Unicode code-point semantics for `size()`, `charAt()`, `indexOf()`, `lastIndexOf()`, `substring()`, and string indexing
-- **Commutative errors** — `LOGICAL_AND`/`LOGICAL_OR` opcodes implement proper CEL error semantics (`error && false = false`, `error || true = true`)
-- **Duration** — full support including total-value accessors per spec
 
 ## Architecture
 

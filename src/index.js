@@ -86,6 +86,20 @@ export function toB64(bytecode) {
 }
 
 /**
+ * Compile a CEL expression and return a callable function.
+ * The returned function accepts an activation object and evaluates the expression.
+ *
+ * @param {string} src         - CEL expression
+ * @param {object} [options]   - same options as compile()
+ * @returns {(activation?: object) => *} callable that evaluates the expression
+ */
+export function program(src, options = {}) {
+  const bytecode = compile(src, options)
+  const functionTable = options.env ? options.env.functionTable : undefined
+  return (activation) => evaluate(bytecode, activation || {}, functionTable)
+}
+
+/**
  * Convenience function: compile + evaluate in one call, with caching.
  *
  * @param {string} src         - CEL expression
