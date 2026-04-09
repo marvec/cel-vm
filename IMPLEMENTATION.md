@@ -280,7 +280,7 @@ AST nodes are heap-allocated objects scattered in memory. The instruction array 
 ## Public API (`src/index.js`)
 
 ```js
-import { compile, evaluate, run, load, toB64 } from './src/index.js';
+import { compile, evaluate, run, fromB64, toB64 } from './src/index.js';
 
 // Compile once → Uint8Array bytecode
 const bytecode = compile('age >= 18 && country == "CZ"');
@@ -295,7 +295,7 @@ const result2 = run('1 + 2 * 3', {});
 const b64 = toB64(bytecode);
 
 // Load from storage
-const bytecode2 = load(b64);
+const bytecode2 = fromB64(b64);
 ```
 
 `compile()` accepts an optional `{ debugInfo: true }` flag to embed source locations in the binary (used by error messages and future debuggers).

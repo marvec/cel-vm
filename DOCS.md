@@ -46,15 +46,15 @@ import { run } from 'cel-vm'
 run('age >= 18', { age: 25n })  // → true
 ```
 
-### `toB64(bytecode)` / `load(base64)`
+### `toB64(bytecode)` / `fromB64(base64)`
 
-Serialise bytecode to Base64 and load it back.
+Serialise bytecode to Base64 and deserialise it back.
 
 ```js
-import { compile, toB64, load, evaluate } from 'cel-vm'
+import { compile, toB64, fromB64, evaluate } from 'cel-vm'
 
 const b64 = toB64(compile('x > 10'))
-const bytecode = load(b64)
+const bytecode = fromB64(b64)
 evaluate(bytecode, { x: 42n })  // → true
 ```
 
