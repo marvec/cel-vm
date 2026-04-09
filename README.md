@@ -185,7 +185,13 @@ Measured on Apple M1 Pro, Bun 1.3.11, 100K iterations per case. All cel-vm timin
 bun run bench/compare.js
 ```
 
-## cel-spec Divergences
+## cel-spec Conformance
+
+**1335 / 1537 tests passing (86.9%)**. All 315 marcbachmann/cel-js compatibility tests pass (100%).
+
+202 cel-spec tests are skipped — see `docs/plans/2026-04-08-006-feat-skipped-test-gap-analysis-plan.md` for the full breakdown and implementation roadmap.
+
+### Divergences
 
 | Area | cel-vm | cel-spec | Reason |
 |------|--------|----------|--------|
@@ -200,7 +206,13 @@ bun run bench/compare.js
 | **Bytes literals** | `b"..."` → `Uint8Array` | Full support | `\u`/`\U` escapes in bytes produce raw `charCodeAt` instead of UTF-8 encoding |
 | **Bytes comparison** | Not supported | `<`, `>`, `<=`, `>=` | Bytes ordering operators not implemented |
 | **Enums** | Not supported | Proto schema enums | No proto schema to resolve enum names |
-| **String `size()`** | UTF-16 code units | Codepoint count | `size()` uses JS `String.length`; differs for astral-plane characters. `charAt()` is codepoint-aware |
+| **Type identifiers** | `type()` returns string | First-class type values | `bool`, `int`, etc. are not resolvable as identifiers |
+
+### Resolved (previously divergent)
+
+- **String `size()`** — now uses Unicode code-point semantics for `size()`, `charAt()`, `indexOf()`, `lastIndexOf()`, `substring()`, and string indexing
+- **Commutative errors** — `LOGICAL_AND`/`LOGICAL_OR` opcodes implement proper CEL error semantics (`error && false = false`, `error || true = true`)
+- **Duration** — full support including total-value accessors per spec
 
 ## Architecture
 
