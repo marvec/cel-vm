@@ -38,7 +38,8 @@ export function compile(src, options = {}) {
   if (useCache && !options.env && cache.has(src)) return cache.get(src)
 
   const tokens  = tokenize(src)
-  const ast     = parse(tokens)
+  const limits  = options.env && options.env.limits ? options.env.limits : undefined
+  const ast     = parse(tokens, limits)
   const checked = check(ast)
   const program = compileAst(checked, {
     debugInfo: options.debugInfo || false,

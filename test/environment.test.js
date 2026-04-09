@@ -2,6 +2,7 @@ import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { Environment } from '../src/environment.js'
 import { compile, evaluate, CompileError } from '../src/index.js'
+import { ParseError } from '../src/parser.js'
 
 describe('Environment', () => {
   it('creates an empty environment', () => {
@@ -422,5 +423,104 @@ describe('Environment — end-to-end', () => {
     const bytecode = env.compile('prefix(name, "Dr. ")')
     assert.equal(env.evaluate(bytecode, { name: 'Smith' }), 'Dr. Smith')
     assert.equal(env.evaluate(bytecode, { name: 'Jones' }), 'Dr. Jones')
+  })
+})
+
+describe('Environment — parser limits', () => {
+  it('no limits by default — complex expressions work', () => {
+    const env = new Environment()
+    // No limits configured — should parse without error
+    assert.equal(env.run('[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].size()'), 10n)
+  })
+
+  it('maxListElements rejects list literals exceeding the limit', () => {
+    const env = new Environment({ limits: { maxListElements: 3 } })
+    // 3 elements — exactly at limit, should pass
+    assert.deepStrictEqual(env.run('[1, 2, 3]'), [1n, 2n, 3n])
+    // 4 elements — exceeds limit
+    assert.throws(
+      () => env.run('[1, 2, 3, 4]'),
+      (err) => err instanceof ParseError && err.message.includes('list element limit')
+    )
+  })
+
+  it('maxMapEntries rejects map literals exceeding the limit', () => {
+    const env = new Environment({ limits: { maxMapEntries: 2 } })
+    // 2 entries — at limit
+    const result = env.run('{"a": 1, "b": 2}')
+    assert.equal(result.get('a'), 1n)
+    // 3 entries — exceeds limit
+    assert.throws(
+      () => env.run('{"a": 1, "b": 2, "c": 3}'),
+      (err) => err instanceof ParseError && err.message.includes('map entry limit')
+    )
+  })
+
+  it('maxCallArguments rejects function calls exceeding the limit', () => {
+    const env = new Environment({ limits: { maxCallArguments: 2 } })
+    // 2 args — at limit (size is a method, not affected)
+    assert.equal(env.run('size("hi")'), 2n)
+    // Built-in with 3 args is also rejected at parse time
+    assert.throws(
+      () => env.run('f(1, 2, 3)'),
+      (err) => err instanceof ParseError && err.message.includes('call argument limit')
+    )
+  })
+
+  it('maxDepth rejects deeply nested expressions', () => {
+    const env = new Environment({ limits: { maxDepth: 2 } })
+    // Depth 1: outer parens
+    assert.equal(env.run('(1 + 2)'), 3n)
+    // Depth 2: two levels of parens
+    assert.equal(env.run('((1 + 2))'), 3n)
+    // Depth 3: three levels — exceeds limit
+    assert.throws(
+      () => env.run('(((1 + 2)))'),
+      (err) => err instanceof ParseError && err.message.includes('depth limit')
+    )
+  })
+
+  it('maxDepth counts list/map literals as depth', () => {
+    const env = new Environment({ limits: { maxDepth: 1 } })
+    // A list is depth 1
+    assert.deepStrictEqual(env.run('[1, 2]'), [1n, 2n])
+    // Nested list is depth 2 — exceeds limit of 1
+    assert.throws(
+      () => env.run('[[1]]'),
+      (err) => err instanceof ParseError && err.message.includes('depth limit')
+    )
+  })
+
+  it('maxAstNodes rejects expressions with too many nodes', () => {
+    const env = new Environment({ limits: { maxAstNodes: 3 } })
+    // "1 + 2" = 3 nodes (IntLit, IntLit, Binary) — at limit
+    assert.equal(env.run('1 + 2'), 3n)
+    // "1 + 2 + 3" = 5 nodes — exceeds limit
+    assert.throws(
+      () => env.run('1 + 2 + 3'),
+      (err) => err instanceof ParseError && err.message.includes('AST node limit')
+    )
+  })
+
+  it('limits work via standalone compile() with env config', () => {
+    const env = new Environment({ limits: { maxListElements: 2 } })
+    const config = env.toConfig()
+    // Should work at limit
+    const bytecode = compile('[1, 2]', { env: config })
+    assert.ok(bytecode instanceof Uint8Array)
+    // Should reject over limit
+    assert.throws(
+      () => compile('[1, 2, 3]', { env: config }),
+      (err) => err instanceof ParseError && err.message.includes('list element limit')
+    )
+  })
+
+  it('limits combine with other Environment features', () => {
+    const env = new Environment({ limits: { maxCallArguments: 3 } })
+      .registerFunction('add3', 3, (a, b, c) => a + b + c)
+      .registerConstant('bonus', 'int', 10n)
+
+    // 3 args — at limit
+    assert.equal(env.run('add3(1, 2, 3) + bonus'), 16n)
   })
 })
