@@ -5,6 +5,7 @@ import { TT } from './lexer.js'
 export class ParseError extends Error {
   constructor(msg, line, col) {
     super(`ParseError at ${line}:${col}: ${msg}`)
+    this.name = 'ParseError'
     this.line = line
     this.col = col
   }
@@ -16,10 +17,41 @@ const RESERVED = new Set(['if', 'else', 'for', 'var', 'package', 'as', 'import']
 /**
  * Parse an array of tokens from tokenize() and return the AST root node.
  * @param {Array} tokens  — token array produced by tokenize()
+ * @param {object} [limits] — optional structural limits
+ * @param {number} [limits.maxAstNodes]      — max AST nodes allowed
+ * @param {number} [limits.maxDepth]         — max nesting depth
+ * @param {number} [limits.maxListElements]  — max elements in a list literal
+ * @param {number} [limits.maxMapEntries]    — max entries in a map literal
+ * @param {number} [limits.maxCallArguments] — max arguments to a function call
  * @returns {object}      — AST root node
  */
-export function parse(tokens) {
+export function parse(tokens, limits) {
   let pos = 0
+  let nodeCount = 0
+  let depth = 0
+
+  const maxNodes = limits && limits.maxAstNodes != null ? limits.maxAstNodes : Infinity
+  const maxDepth = limits && limits.maxDepth != null ? limits.maxDepth : Infinity
+  const maxListEl = limits && limits.maxListElements != null ? limits.maxListElements : Infinity
+  const maxMapEnt = limits && limits.maxMapEntries != null ? limits.maxMapEntries : Infinity
+  const maxCallArgs = limits && limits.maxCallArguments != null ? limits.maxCallArguments : Infinity
+
+  function countNode(node) {
+    if (++nodeCount > maxNodes) {
+      const tok = tokens[pos] || tokens[tokens.length - 1]
+      throw new ParseError(`AST node limit exceeded (max ${maxNodes})`, tok.line, tok.col)
+    }
+    return node
+  }
+
+  function enterDepth() {
+    if (++depth > maxDepth) {
+      const tok = tokens[pos] || tokens[tokens.length - 1]
+      throw new ParseError(`expression depth limit exceeded (max ${maxDepth})`, tok.line, tok.col)
+    }
+  }
+
+  function leaveDepth() { depth-- }
 
   function cur()  { return tokens[pos] }
   function check(type) { return tokens[pos].type === type }
@@ -68,7 +100,7 @@ export function parse(tokens) {
       const thenNode = parseExpression()
       expect(TT.COLON, "expected ':' in ternary expression")
       const elseNode = parseExpression()
-      node = { type: 'Ternary', cond: node, then: thenNode, else: elseNode, line: qTok.line, col: qTok.col }
+      node = countNode({ type: 'Ternary', cond: node, then: thenNode, else: elseNode, line: qTok.line, col: qTok.col })
     }
     return node
   }
@@ -80,7 +112,7 @@ export function parse(tokens) {
     while (check(TT.OR)) {
       const opTok = advance()
       const right = parseAnd()
-      node = { type: 'Binary', op: '||', left: node, right, line: opTok.line, col: opTok.col }
+      node = countNode({ type: 'Binary', op: '||', left: node, right, line: opTok.line, col: opTok.col })
     }
     return node
   }
@@ -92,7 +124,7 @@ export function parse(tokens) {
     while (check(TT.AND)) {
       const opTok = advance()
       const right = parseEquality()
-      node = { type: 'Binary', op: '&&', left: node, right, line: opTok.line, col: opTok.col }
+      node = countNode({ type: 'Binary', op: '&&', left: node, right, line: opTok.line, col: opTok.col })
     }
     return node
   }
@@ -105,7 +137,7 @@ export function parse(tokens) {
       const opTok = advance()
       const op = opTok.type === TT.EQ ? '==' : '!='
       const right = parseRelational()
-      node = { type: 'Binary', op, left: node, right, line: opTok.line, col: opTok.col }
+      node = countNode({ type: 'Binary', op, left: node, right, line: opTok.line, col: opTok.col })
     }
     return node
   }
@@ -127,7 +159,7 @@ export function parse(tokens) {
         case TT.IN: op = 'in'; break
       }
       const right = parseAdditive()
-      node = { type: 'Binary', op, left: node, right, line: tok.line, col: tok.col }
+      node = countNode({ type: 'Binary', op, left: node, right, line: tok.line, col: tok.col })
     }
     return node
   }
@@ -140,7 +172,7 @@ export function parse(tokens) {
       const opTok = advance()
       const op = opTok.type === TT.PLUS ? '+' : '-'
       const right = parseMultiplicative()
-      node = { type: 'Binary', op, left: node, right, line: opTok.line, col: opTok.col }
+      node = countNode({ type: 'Binary', op, left: node, right, line: opTok.line, col: opTok.col })
     }
     return node
   }
@@ -161,7 +193,7 @@ export function parse(tokens) {
         case TT.CARET:   op = '^'; break
       }
       const right = parsePower()
-      node = { type: 'Binary', op, left: node, right, line: tok.line, col: tok.col }
+      node = countNode({ type: 'Binary', op, left: node, right, line: tok.line, col: tok.col })
     }
     return node
   }
@@ -174,7 +206,7 @@ export function parse(tokens) {
       const opTok = advance()
       // Right-associative: right side is another parsePower call
       const right = parsePower()
-      return { type: 'Binary', op: '**', left: node, right, line: opTok.line, col: opTok.col }
+      return countNode({ type: 'Binary', op: '**', left: node, right, line: opTok.line, col: opTok.col })
     }
     return node
   }
@@ -186,14 +218,14 @@ export function parse(tokens) {
       const tok = advance()
       const operand = parseUnary()
       // Fold unary minus directly into numeric literals
-      if (operand.type === 'IntLit')   return { type: 'IntLit',   value: -operand.value, line: tok.line, col: tok.col }
-      if (operand.type === 'FloatLit') return { type: 'FloatLit', value: -operand.value, line: tok.line, col: tok.col }
-      return { type: 'Unary', op: '-', operand, line: tok.line, col: tok.col }
+      if (operand.type === 'IntLit')   return countNode({ type: 'IntLit',   value: -operand.value, line: tok.line, col: tok.col })
+      if (operand.type === 'FloatLit') return countNode({ type: 'FloatLit', value: -operand.value, line: tok.line, col: tok.col })
+      return countNode({ type: 'Unary', op: '-', operand, line: tok.line, col: tok.col })
     }
     if (check(TT.NOT)) {
       const tok = advance()
       const operand = parseUnary()
-      return { type: 'Unary', op: '!', operand, line: tok.line, col: tok.col }
+      return countNode({ type: 'Unary', op: '!', operand, line: tok.line, col: tok.col })
     }
     return parseMember()
   }
@@ -226,9 +258,9 @@ export function parse(tokens) {
           advance()
           const args = parseArgList()
           expect(TT.RPAREN, "expected ')' after method arguments")
-          node = { type: 'RCall', receiver: node, method: fieldName, args, line: nameTok.line, col: nameTok.col }
+          node = countNode({ type: 'RCall', receiver: node, method: fieldName, args, line: nameTok.line, col: nameTok.col })
         } else {
-          node = { type: 'Select', object: node, field: fieldName, line: dotTok.line, col: dotTok.col }
+          node = countNode({ type: 'Select', object: node, field: fieldName, line: dotTok.line, col: dotTok.col })
         }
 
       } else if (check(TT.OPT_DOT)) {
@@ -247,9 +279,9 @@ export function parse(tokens) {
           advance()
           const args = parseArgList()
           expect(TT.RPAREN, "expected ')' after method arguments")
-          node = { type: 'RCall', receiver: { type: 'OptSelect', object: node, field: fieldName, line: optDotTok.line, col: optDotTok.col }, method: fieldName, args, line: nameTok.line, col: nameTok.col }
+          node = countNode({ type: 'RCall', receiver: countNode({ type: 'OptSelect', object: node, field: fieldName, line: optDotTok.line, col: optDotTok.col }), method: fieldName, args, line: nameTok.line, col: nameTok.col })
         } else {
-          node = { type: 'OptSelect', object: node, field: fieldName, line: optDotTok.line, col: optDotTok.col }
+          node = countNode({ type: 'OptSelect', object: node, field: fieldName, line: optDotTok.line, col: optDotTok.col })
         }
 
       } else if (check(TT.LBRACKET)) {
@@ -259,11 +291,11 @@ export function parse(tokens) {
           advance()
           const index = parseExpression()
           expect(TT.RBRACKET, "expected ']' after optional index expression")
-          node = { type: 'OptIndex', object: node, index, line: bracketTok.line, col: bracketTok.col }
+          node = countNode({ type: 'OptIndex', object: node, index, line: bracketTok.line, col: bracketTok.col })
         } else {
           const index = parseExpression()
           expect(TT.RBRACKET, "expected ']' after index expression")
-          node = { type: 'Index', object: node, index, line: bracketTok.line, col: bracketTok.col }
+          node = countNode({ type: 'Index', object: node, index, line: bracketTok.line, col: bracketTok.col })
         }
 
       } else {
@@ -285,6 +317,10 @@ export function parse(tokens) {
         args.push(parseExpression())
       }
     }
+    if (args.length > maxCallArgs) {
+      const tok = tokens[pos] || tokens[tokens.length - 1]
+      throw new ParseError(`call argument limit exceeded (${args.length} > max ${maxCallArgs})`, tok.line, tok.col)
+    }
     return args
   }
 
@@ -297,48 +333,48 @@ export function parse(tokens) {
       // Integer literal
       case TT.INT: {
         advance()
-        return { type: 'IntLit', value: tok.value, line: tok.line, col: tok.col }
+        return countNode({ type: 'IntLit', value: tok.value, line: tok.line, col: tok.col })
       }
 
       // Unsigned integer literal
       case TT.UINT: {
         advance()
-        return { type: 'UintLit', value: tok.value, line: tok.line, col: tok.col }
+        return countNode({ type: 'UintLit', value: tok.value, line: tok.line, col: tok.col })
       }
 
       // Float literal
       case TT.FLOAT: {
         advance()
-        return { type: 'FloatLit', value: tok.value, line: tok.line, col: tok.col }
+        return countNode({ type: 'FloatLit', value: tok.value, line: tok.line, col: tok.col })
       }
 
       // String literal (regular or raw — escape decoding already done by lexer)
       case TT.STRING:
       case TT.RAW_STRING: {
         advance()
-        return { type: 'StringLit', value: tok.value, line: tok.line, col: tok.col }
+        return countNode({ type: 'StringLit', value: tok.value, line: tok.line, col: tok.col })
       }
 
       // Bytes literal
       case TT.BYTES: {
         advance()
-        return { type: 'BytesLit', value: tok.value, line: tok.line, col: tok.col }
+        return countNode({ type: 'BytesLit', value: tok.value, line: tok.line, col: tok.col })
       }
 
       // Boolean literals
       case TT.TRUE: {
         advance()
-        return { type: 'BoolLit', value: true, line: tok.line, col: tok.col }
+        return countNode({ type: 'BoolLit', value: true, line: tok.line, col: tok.col })
       }
       case TT.FALSE: {
         advance()
-        return { type: 'BoolLit', value: false, line: tok.line, col: tok.col }
+        return countNode({ type: 'BoolLit', value: false, line: tok.line, col: tok.col })
       }
 
       // Null literal
       case TT.NULL: {
         advance()
-        return { type: 'NullLit', line: tok.line, col: tok.col }
+        return countNode({ type: 'NullLit', line: tok.line, col: tok.col })
       }
 
       // Identifier or global function call
@@ -353,15 +389,17 @@ export function parse(tokens) {
           advance()
           const args = parseArgList()
           expect(TT.RPAREN, "expected ')' after function arguments")
-          return { type: 'Call', name, args, line: tok.line, col: tok.col }
+          return countNode({ type: 'Call', name, args, line: tok.line, col: tok.col })
         }
-        return { type: 'Ident', name, line: tok.line, col: tok.col }
+        return countNode({ type: 'Ident', name, line: tok.line, col: tok.col })
       }
 
       // Grouped expression: (expr)
       case TT.LPAREN: {
         advance()
+        enterDepth()
         const node = parseExpression()
+        leaveDepth()
         expect(TT.RPAREN, "expected ')' to close grouped expression")
         return node
       }
@@ -369,11 +407,12 @@ export function parse(tokens) {
       // List literal: [expr, ...] or [?optExpr, ...]
       case TT.LBRACKET: {
         const listTok = advance()
+        enterDepth()
         const elements = []
         if (!check(TT.RBRACKET)) {
           if (check(TT.QUESTION)) {
             advance()
-            elements.push({ type: 'OptElement', expr: parseExpression() })
+            elements.push(countNode({ type: 'OptElement', expr: parseExpression() }))
           } else {
             elements.push(parseExpression())
           }
@@ -381,19 +420,25 @@ export function parse(tokens) {
             if (check(TT.RBRACKET)) break  // trailing comma allowed
             if (check(TT.QUESTION)) {
               advance()
-              elements.push({ type: 'OptElement', expr: parseExpression() })
+              elements.push(countNode({ type: 'OptElement', expr: parseExpression() }))
             } else {
               elements.push(parseExpression())
             }
           }
         }
+        leaveDepth()
+        if (elements.length > maxListEl) {
+          const tok2 = tokens[pos] || tokens[tokens.length - 1]
+          throw new ParseError(`list element limit exceeded (${elements.length} > max ${maxListEl})`, tok2.line, tok2.col)
+        }
         expect(TT.RBRACKET, "expected ']' to close list literal")
-        return { type: 'List', elements, line: listTok.line, col: listTok.col }
+        return countNode({ type: 'List', elements, line: listTok.line, col: listTok.col })
       }
 
       // Map literal: {key: value, ...}
       case TT.LBRACE: {
         const mapTok = advance()
+        enterDepth()
         const entries = []
         if (!check(TT.RBRACE)) {
           entries.push(parseMapEntry())
@@ -402,8 +447,13 @@ export function parse(tokens) {
             entries.push(parseMapEntry())
           }
         }
+        leaveDepth()
+        if (entries.length > maxMapEnt) {
+          const tok2 = tokens[pos] || tokens[tokens.length - 1]
+          throw new ParseError(`map entry limit exceeded (${entries.length} > max ${maxMapEnt})`, tok2.line, tok2.col)
+        }
         expect(TT.RBRACE, "expected '}' to close map literal")
-        return { type: 'Map', entries, line: mapTok.line, col: mapTok.col }
+        return countNode({ type: 'Map', entries, line: mapTok.line, col: mapTok.col })
       }
 
       // Bitwise XOR as a binary operator — cannot start a primary

@@ -72,6 +72,26 @@ import { Environment } from 'cel-vm'
 const env = new Environment()
 ```
 
+### Constructor Options
+
+The constructor accepts an optional configuration object:
+
+```js
+const env = new Environment({
+  limits: {
+    maxAstNodes: 100_000,     // max AST nodes (default: no limit)
+    maxDepth: 250,            // max nesting depth (default: no limit)
+    maxListElements: 1_000,   // max elements in a list literal (default: no limit)
+    maxMapEntries: 1_000,     // max entries in a map literal (default: no limit)
+    maxCallArguments: 32,     // max function call arguments (default: no limit)
+  }
+})
+```
+
+Limits are enforced at **parse time** — they prevent pathologically large or deeply nested expressions from consuming resources. They have zero run-time overhead. When no limits are configured, behaviour is identical to previous versions.
+
+All limit violations throw `ParseError`.
+
 ### `env.registerConstant(name, type, value)`
 
 Register a compile-time constant. Constants are substituted directly into bytecode — zero runtime cost.
@@ -242,7 +262,15 @@ Bytecode compiled with custom functions references function IDs that only make s
 ## Error Types
 
 ```js
-import { LexError, ParseError, CheckError, CompileError, EvaluationError } from 'cel-vm'
+import {
+  LexError,           // tokenization failures
+  ParseError,         // syntax errors
+  CheckError,         // type/semantic errors
+  CompileError,       // compilation errors (undeclared vars, unknown functions)
+  EvaluationError,    // runtime errors
+  EnvironmentError,   // environment configuration errors (duplicate registrations, invalid types)
+  BytecodeError,      // bytecode encode/decode errors (corrupt data, bad magic, checksum mismatch)
+} from 'cel-vm'
 ```
 
-All errors include descriptive messages with source location when available.
+All errors extend `Error` and set `err.name` to their class name. `LexError` and `ParseError` also include `.line` and `.col` properties for source location.
