@@ -36,6 +36,24 @@ evaluate(bytecode, { x: 10n, y: 5n })  // → 15n
 - `activation` — variable bindings `{ name: value }`
 - `customFunctionTable` — array of custom function implementations (from `env.toConfig().functionTable`)
 
+### `program(src, options?)`
+
+Compile a CEL expression and return a callable function. The returned function accepts an activation object and evaluates the expression. Compiles once at call time — subsequent invocations of the returned function only run the VM.
+
+```js
+import { program } from 'cel-vm'
+
+const check = program('age >= 18')
+check({ age: 25n })  // → true
+check({ age: 12n })  // → false
+```
+
+**Parameters:**
+- `src` — CEL expression string
+- `options` — same options as `compile()`
+
+**Returns:** `(activation?: object) => *` — callable that evaluates the compiled expression
+
 ### `run(src, activation?, options?)`
 
 Convenience: compile + evaluate in one call, with caching.
@@ -184,6 +202,22 @@ Evaluate bytecode compiled within this environment.
 const result = env.evaluate(bytecode, { user: { age: 25n } })
 ```
 
+### `env.program(src, options?)`
+
+Compile a CEL expression within this environment and return a callable function.
+
+```js
+const check = env.program('user.age >= minAge')
+check({ user: { age: 25n } })  // → true
+check({ user: { age: 12n } })  // → false
+```
+
+**Parameters:**
+- `src` — CEL expression string
+- `options` — same options as `env.compile()`
+
+**Returns:** `(activation?: object) => *` — callable that evaluates the compiled expression
+
 ### `env.run(src, activation?)`
 
 Convenience: compile + evaluate in one call.
@@ -250,12 +284,10 @@ const env = new Environment()
     return s.replace(/\b\w/g, c => c.toUpperCase())
   })
 
-// Compile once
-const policy = env.compile('user.age >= minAge && hasRole(user, "admin")')
-
-// Evaluate many times
-env.evaluate(policy, { user: { age: 25n, roles: ['admin'] } })  // → true
-env.evaluate(policy, { user: { age: 16n, roles: ['user'] } })   // → false
+// Compile to a callable — recommended for repeated evaluation
+const policy = env.program('user.age >= minAge && hasRole(user, "admin")')
+policy({ user: { age: 25n, roles: ['admin'] } })  // → true
+policy({ user: { age: 16n, roles: ['user'] } })   // → false
 
 // Or use run() for one-off evaluation
 env.run('"hello world".titleCase()')  // → "Hello World"

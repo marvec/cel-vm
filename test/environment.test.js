@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { Environment, EnvironmentError } from '../src/environment.js'
-import { compile, evaluate, CompileError } from '../src/index.js'
+import { compile, evaluate, program, CompileError } from '../src/index.js'
 import { ParseError } from '../src/parser.js'
 
 describe('Environment', () => {
@@ -551,5 +551,26 @@ describe('Environment — parser limits', () => {
 
     // 3 args — at limit
     assert.equal(env.run('add3(1, 2, 3) + bonus'), 16n)
+  })
+})
+
+describe('program()', () => {
+  it('returns a callable that evaluates the expression', () => {
+    const fn = program('x + 1')
+    assert.equal(fn({ x: 10n }), 11n)
+    assert.equal(fn({ x: 20n }), 21n)
+  })
+
+  it('works with no variables', () => {
+    const fn = program('2 + 3')
+    assert.equal(fn(), 5n)
+  })
+
+  it('Environment.program() returns a callable', () => {
+    const env = new Environment()
+      .registerConstant('bonus', 'int', 100n)
+    const fn = env.program('x + bonus')
+    assert.equal(fn({ x: 1n }), 101n)
+    assert.equal(fn({ x: 50n }), 150n)
   })
 })
