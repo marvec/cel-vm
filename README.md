@@ -1,16 +1,20 @@
+![GitHub License](https://img.shields.io/github/license/marvec/cel-vm) ![NPM Version](https://img.shields.io/npm/v/%40marvec%2Fcel-vm) ![NPM Downloads](https://img.shields.io/npm/dm/%40marvec%2Fcel-vm)
+
 # cel-vm
+
+[API Reference](DOCS.md) · [Architecture](IMPLEMENTATION.md) · [License](LICENSE) · [Notices](NOTICES)
 
 High-performance [Common Expression Language](https://github.com/google/cel-spec) (CEL) evaluator in JavaScript using a bytecode VM. No runtime dependencies.
 
 **~24× faster** than [marcbachmann/cel-js](https://github.com/marcbachmann/cel-js) on repeated evaluation (12–47× depending on expression complexity).
-
-[API Reference](DOCS.md) · [Architecture](IMPLEMENTATION.md) · [License](LICENSE) · [Notices](NOTICES)
 
 ## Why
 
 CEL is Google's expression language for policy evaluation, access control, and data validation. Existing JavaScript implementations use tree-walking interpreters — they re-traverse the AST every time an expression is evaluated. That's fine for one-off use, but expensive when the same expression runs millions of times against different inputs (policy engines, rule engines, analytics pipelines).
 
 cel-vm compiles CEL to bytecode once and evaluates it in a tight dispatch loop. The bytecode can be serialised to Base64, stored in a database, and loaded without re-parsing.
+
+The implementation was created by AI (specifically Claude, mostly Opus) as my personal research experiment on AI development. I write about [software architecture and AI tooling on my Substack](https://substack.com/@marvec).
 
 ### Prior Art
 
