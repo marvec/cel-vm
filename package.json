@@ -21,7 +21,8 @@
   },
   "files": [
     "src/",
-    "bin/"
+    "bin/",
+    "NOTICES"
   ],
   "scripts": {
     "test": "bun test",
