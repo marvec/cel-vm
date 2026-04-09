@@ -64,6 +64,11 @@ import { run } from 'cel-vm'
 run('age >= 18', { age: 25n })  // → true
 ```
 
+**Parameters:**
+- `src` — CEL expression string
+- `activation` — variable bindings `{ name: value }`
+- `options` — same as `compile()` options (`debugInfo`, `cache`, `env`). When `options.env` is provided, its `functionTable` is automatically passed to evaluate.
+
 ### `toB64(bytecode)` / `fromB64(base64)`
 
 Serialise bytecode to Base64 and deserialise it back.
@@ -194,6 +199,10 @@ Compile a CEL expression within this environment.
 const bytecode = env.compile('isAdult(user.age)')
 ```
 
+**Options:**
+- `options.debugInfo` — include line/column debug info (default: `false`)
+- `options.cache` — use compilation cache (default: `true`). Cache is invalidated when any registration method is called.
+
 ### `env.evaluate(bytecode, activation?)`
 
 Evaluate bytecode compiled within this environment.
@@ -313,4 +322,229 @@ import {
 } from 'cel-vm'
 ```
 
-All errors extend `Error` and set `err.name` to their class name. `LexError` and `ParseError` also include `.line` and `.col` properties for source location.
+All errors extend `Error` and set `err.name` to their class name. `LexError` and `ParseError` also include `.line` and `.col` properties for source location. `EvaluationError` includes `.instrIndex` (internal) and, when debug mode is enabled, `.line` and `.col`.
+
+---
+
+## Activation Values
+
+Pass variables as a plain object. Use the correct JavaScript types:
+
+| CEL type | JavaScript type | Example |
+|----------|----------------|---------|
+| `int` / `uint` | `BigInt` | `42n` |
+| `double` | `number` | `3.14` |
+| `string` | `string` | `'hello'` |
+| `bool` | `boolean` | `true` |
+| `null` | `null` | `null` |
+| `list` | `Array` | `[1n, 2n, 3n]` |
+| `map` | `Map` or plain object | `new Map([['a', 1n]])` |
+| `bytes` | `Uint8Array` | `new Uint8Array([0x48])` |
+
+---
+
+## Built-in Functions
+
+### Type Conversions
+
+| Function | Description |
+|----------|-------------|
+| `int(x)` | Convert to int (from uint, double, string, timestamp → Unix seconds) |
+| `uint(x)` | Convert to uint |
+| `double(x)` | Convert to double |
+| `string(x)` | Convert to string (timestamp → ISO 8601, duration → Go format) |
+| `bool(x)` | Convert to bool (from string `"true"`/`"false"`) |
+| `bytes(x)` | Convert to bytes (from string → UTF-8 encoded) |
+| `type(x)` | Returns the type name as a string |
+| `dyn(x)` | Dynamic type wrapper — passes value through unchanged |
+
+### Constructors
+
+| Function | Description |
+|----------|-------------|
+| `timestamp(s)` | Parse an ISO 8601 string to a timestamp |
+| `duration(s)` | Parse a Go-style duration string (`"1h30m"`, `"300s"`) |
+| `size(x)` | Returns length of string (code points), bytes, list, or map |
+
+### Optional Types
+
+| Function/Method | Description |
+|----------------|-------------|
+| `optional.of(x)` | Wrap a value in an optional |
+| `optional.none()` | Create an empty optional |
+| `optional.ofNonZero(x)` / `optional.ofNonZeroValue(x)` | Wrap value if non-zero/non-empty, else `optional.none()` |
+| `.hasValue()` | Returns `true` if the optional contains a value |
+| `.orValue(default)` | Returns the value if present, otherwise `default` |
+
+---
+
+## String Methods
+
+| Method | Description |
+|--------|-------------|
+| `s.contains(sub)` | Returns `true` if `s` contains `sub` |
+| `s.startsWith(prefix)` | Returns `true` if `s` starts with `prefix` |
+| `s.endsWith(suffix)` | Returns `true` if `s` ends with `suffix` |
+| `s.matches(regex)` | Returns `true` if `s` matches the regex |
+| `s.size()` | Returns string length in Unicode code points |
+| `s.toLowerCase()` / `s.lowerAscii()` | Returns lowercase string |
+| `s.toUpperCase()` / `s.upperAscii()` | Returns uppercase string |
+| `s.trim()` | Returns string with leading/trailing whitespace removed |
+| `s.split(sep)` | Splits `s` by `sep`, returns a list. `split(sep, limit)` limits result count |
+| `s.substring(start)` / `s.substring(start, end)` | Returns substring by code-point indices |
+| `s.indexOf(sub)` / `s.indexOf(sub, offset)` | Returns first code-point index of `sub`, or `-1` |
+| `s.lastIndexOf(sub)` | Returns last code-point index of `sub`, or `-1` |
+| `s.charAt(i)` | Returns the character at code-point index `i` |
+| `s.replace(old, new)` / `s.replace(old, new, limit)` | Replaces occurrences. `limit`: `-1` = all (default), `0` = none, `n` = first n |
+| `list.join()` / `list.join(sep)` | Joins list elements into a string. Without separator, uses empty string |
+| `s.format(args...)` | String formatting with `%s` (string), `%d` (integer), `%%` (literal `%`) |
+
+All string indexing uses Unicode code-point semantics per cel-spec (not UTF-16 code units).
+
+---
+
+## Macros
+
+| Macro | Description |
+|-------|-------------|
+| `list.exists(x, pred)` | Returns `true` if any element satisfies `pred` (short-circuits) |
+| `list.all(x, pred)` | Returns `true` if all elements satisfy `pred` (short-circuits) |
+| `list.filter(x, pred)` | Returns a new list with elements satisfying `pred` |
+| `list.map(x, expr)` | Returns a new list with `expr` applied to each element |
+| `list.exists_one(x, pred)` | Returns `true` if exactly one element satisfies `pred` |
+| `has(obj.field)` | Returns `true` if the field exists (no error on missing) |
+| `cel.bind(x, val, body)` | Binds `x` to `val` and evaluates `body` |
+
+---
+
+## Timestamp Methods
+
+All timestamp methods accept an optional timezone string argument. Without it, they return UTC values.
+
+```js
+run('ts.getHours()', { ts: { __celTimestamp: true, ms: Date.now() } })
+run('ts.getHours("America/New_York")', { ts: { __celTimestamp: true, ms: Date.now() } })
+```
+
+| Method | Description |
+|--------|-------------|
+| `ts.getFullYear(tz?)` | 4-digit year |
+| `ts.getMonth(tz?)` | Month (0–11) |
+| `ts.getDayOfMonth(tz?)` / `ts.getDate(tz?)` | Day of month (1–31) |
+| `ts.getDayOfWeek(tz?)` | Day of week (0 = Sunday, 6 = Saturday) |
+| `ts.getDayOfYear(tz?)` | Day of year (1–366) |
+| `ts.getHours(tz?)` | Hours (0–23) |
+| `ts.getMinutes(tz?)` | Minutes (0–59) |
+| `ts.getSeconds(tz?)` | Seconds (0–59) |
+| `ts.getMilliseconds(tz?)` | Milliseconds (0–999) |
+
+**Supported timezone formats:** IANA names (`"America/New_York"`), fixed UTC offsets (`"+05:30"`, `"-02:30"`), and bare offsets (`"02:00"` normalised to `"+02:00"`).
+
+**Type conversions:** `int(timestamp)` → Unix seconds, `string(timestamp)` → ISO 8601.
+
+---
+
+## Duration Methods
+
+Duration accessors return **total** values per cel-spec (not modular). For example, `duration("3730s").getMinutes()` returns `62`, not `2`.
+
+| Method | Description |
+|--------|-------------|
+| `d.getHours()` | Total hours |
+| `d.getMinutes()` | Total minutes |
+| `d.getSeconds()` | Total seconds |
+| `d.getMilliseconds()` | Total milliseconds |
+
+Duration accessors do not accept timezone arguments.
+
+**Type conversion:** `string(duration)` → Go format (e.g. `"1h2m10s"`).
+
+---
+
+## Math Extensions
+
+All `math.*` functions are namespace-qualified. They are resolved at compile time.
+
+### Aggregation
+
+| Function | Description |
+|----------|-------------|
+| `math.greatest(a, b, ...)` | Returns the maximum value. Accepts 1–N args or a single list |
+| `math.least(a, b, ...)` | Returns the minimum value. Accepts 1–N args or a single list |
+| `math.max(a, b)` | Returns the maximum of two values |
+| `math.min(a, b)` | Returns the minimum of two values |
+
+### Rounding
+
+| Function | Description |
+|----------|-------------|
+| `math.ceil(x)` | Ceiling (double → double) |
+| `math.floor(x)` | Floor (double → double) |
+| `math.round(x)` | Round to nearest (double → double) |
+| `math.trunc(x)` | Truncate toward zero (double → double) |
+
+### Numeric
+
+| Function | Description |
+|----------|-------------|
+| `math.abs(x)` | Absolute value (int/uint/double). Note: `math.abs(-2^63)` returns an overflow error |
+| `math.sign(x)` | Returns -1, 0, or 1 (same type as input) |
+
+### Testing
+
+| Function | Description |
+|----------|-------------|
+| `math.isNaN(x)` | Returns `true` if `x` is NaN (double → bool) |
+| `math.isInf(x)` | Returns `true` if `x` is ±Infinity (double → bool) |
+| `math.isFinite(x)` | Returns `true` if `x` is finite (double → bool) |
+
+### Bitwise
+
+| Function | Description |
+|----------|-------------|
+| `math.bitAnd(a, b)` | Bitwise AND (BigInt operands) |
+| `math.bitOr(a, b)` | Bitwise OR |
+| `math.bitXor(a, b)` | Bitwise XOR |
+| `math.bitNot(a)` | Bitwise NOT. Note: on uint values, returns a signed result |
+| `math.bitShiftLeft(a, n)` | Left shift |
+| `math.bitShiftRight(a, n)` | Right shift |
+
+---
+
+## String Extensions
+
+| Function | Description |
+|----------|-------------|
+| `strings.quote(s)` | Returns the string with special characters escaped and wrapped in quotes |
+
+---
+
+## CLI
+
+The `cel` command-line tool is included when you install the package.
+
+```bash
+# Evaluate an expression
+cel '1 + 2'
+# → 3
+
+# With variables (JSON — integers auto-convert to BigInt)
+cel 'name.startsWith("J") && age >= 18' --vars '{"name": "Jane", "age": 25}'
+# → true
+
+# Compile to Base64 bytecode
+cel compile 'x > 10'
+# → Q0UBAAABAgAAAA...
+
+# Evaluate Base64 bytecode
+cel eval 'Q0UBAAABAgAAAA...' --vars '{"x": 42}'
+# → true
+```
+
+**Commands:**
+- `cel <expression> [--vars '<json>']` — evaluate a CEL expression
+- `cel compile <expression>` — compile to Base64 bytecode
+- `cel eval <base64> [--vars '<json>']` — evaluate Base64 bytecode
+- `cel --help` — show usage
+
+**Note:** Integer values in `--vars` JSON are automatically coerced to `BigInt`.

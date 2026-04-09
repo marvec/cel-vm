@@ -183,11 +183,11 @@ cel eval 'Q0UBAAABAgAAAA...' --vars '{"x": 42}'
 
 ### String methods
 
-`contains()`, `startsWith()`, `endsWith()`, `matches()`, `size()`, `toLowerCase()` / `lowerAscii()`, `toUpperCase()` / `upperAscii()`, `trim()`, `split()`, `substring()`, `indexOf()`, `replace()`
+`contains()`, `startsWith()`, `endsWith()`, `matches()`, `size()`, `toLowerCase()` / `lowerAscii()`, `toUpperCase()` / `upperAscii()`, `trim()`, `split()`, `substring()`, `indexOf()`, `lastIndexOf()`, `charAt()`, `replace()`, `join()`, `format()`
 
 ### Built-in functions
 
-`size()`, `type()`, `int()`, `uint()`, `double()`, `string()`, `bool()`, `timestamp()`, `duration()`
+`size()`, `type()`, `int()`, `uint()`, `double()`, `string()`, `bool()`, `bytes()`, `timestamp()`, `duration()`, `dyn()`
 
 ### Macros
 
@@ -195,7 +195,7 @@ cel eval 'Q0UBAAABAgAAAA...' --vars '{"x": 42}'
 
 ### Optional types
 
-`optional.of()`, `optional.none()`, `.hasValue()`, `.value()`, `.orValue()`, `.or()`
+`optional.of()`, `optional.none()`, `.hasValue()`, `.orValue()`, `optional.ofNonZero()` / `optional.ofNonZeroValue()`
 
 ### Timestamp methods
 
@@ -204,6 +204,14 @@ cel eval 'Q0UBAAABAgAAAA...' --vars '{"x": 42}'
 ### Duration methods
 
 `getHours()`, `getMinutes()`, `getSeconds()`, `getMilliseconds()`
+
+### Math extensions
+
+`math.greatest()`, `math.least()`, `math.max()`, `math.min()`, `math.abs()`, `math.ceil()`, `math.floor()`, `math.round()`, `math.trunc()`, `math.sign()`, `math.isNaN()`, `math.isInf()`, `math.isFinite()`, `math.bitAnd()`, `math.bitOr()`, `math.bitXor()`, `math.bitNot()`, `math.bitShiftLeft()`, `math.bitShiftRight()`
+
+### String extensions
+
+`strings.quote()`
 
 ### String literals
 

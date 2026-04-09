@@ -57,7 +57,7 @@ export function compile(src: string, options?: CompileOptions): Uint8Array;
  * @returns evaluation result
  * @throws {EvaluationError}
  */
-export function evaluate(bytecode: Uint8Array, activation?: Record<string, unknown>): unknown;
+export function evaluate(bytecode: Uint8Array, activation?: Record<string, unknown>, customFunctionTable?: Function[]): unknown;
 
 /**
  * Decode bytecode from a Base64 string.
@@ -83,7 +83,7 @@ export function toB64(bytecode: Uint8Array): string;
  * @returns evaluation result
  * @throws {LexError | ParseError | CheckError | CompileError | EvaluationError}
  */
-export function run(src: string, activation?: Record<string, unknown>): unknown;
+export function run(src: string, activation?: Record<string, unknown>, options?: CompileOptions): unknown;
 
 /**
  * Declaration builder for CEL-VM environments.
@@ -143,7 +143,7 @@ export class Environment {
    * @param options - compilation options (debugInfo only)
    * @throws {LexError | ParseError | CheckError | CompileError}
    */
-  compile(src: string, options?: { debugInfo?: boolean }): Uint8Array;
+  compile(src: string, options?: { debugInfo?: boolean; cache?: boolean }): Uint8Array;
 
   /**
    * Evaluate bytecode compiled within this environment.
@@ -195,6 +195,12 @@ export class CompileError extends Error {
 
 /** Runtime evaluation error. */
 export class EvaluationError extends Error {
+  /** Internal instruction index where the error occurred. */
+  instrIndex?: number;
+  /** Source line (only present when debug mode is enabled). */
+  line?: number;
+  /** Source column (only present when debug mode is enabled). */
+  col?: number;
   constructor(msg: string);
 }
 
