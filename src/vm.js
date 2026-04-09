@@ -74,6 +74,14 @@ function checkIntOverflow(v) {
   return v
 }
 
+function checkUintOverflow(v) {
+  if (v < 0n || v > UINT64_MAX) return celError(`unsigned integer overflow: ${v}`)
+  return v
+}
+
+// TAG constant for uint64 (must match bytecode.js TAG_UINT64)
+const TAG_UINT64 = 3
+
 // ---------------------------------------------------------------------------
 // Timestamp/Duration range constants
 // ---------------------------------------------------------------------------
@@ -81,6 +89,10 @@ const MIN_TS_MS = -62135596800000   // 0001-01-01T00:00:00Z
 const MAX_TS_MS = 253402300799999   // 9999-12-31T23:59:59.999Z
 const MAX_DUR_MS = 315576000000000  // +315576000000s
 const MIN_DUR_MS = -315576000000000 // -315576000000s
+// Go's time.Duration is int64 nanoseconds; max ~9.22e18 ns = ~9.22e9 seconds
+// Timestamp subtraction in cel-go overflows when converting seconds to nanos
+const MAX_TS_DUR_MS = 9223372036854  // floor(MaxInt64 / 1e6) ms
+const MIN_TS_DUR_MS = -9223372036854
 
 // ---------------------------------------------------------------------------
 // Arithmetic helpers
@@ -129,7 +141,7 @@ function celSub(a, b) {
   }
   if (isTimestamp(a) && isTimestamp(b)) {
     const ms = a.ms - b.ms
-    if (ms < MIN_DUR_MS || ms > MAX_DUR_MS) return celError('duration overflow')
+    if (ms < MIN_TS_DUR_MS || ms > MAX_TS_DUR_MS) return celError('duration overflow')
     return { __celDuration: true, ms }
   }
   if (isDuration(a) && isDuration(b)) {
@@ -374,7 +386,7 @@ function celHasField(obj, field) {
 }
 
 // ---------------------------------------------------------------------------
-// Custom function dispatch (IDs >= 64, separate from callBuiltin for JIT)
+// Custom function dispatch (IDs >= 128, separate from callBuiltin for JIT)
 // ---------------------------------------------------------------------------
 
 function callCustom(id, argc, stack, sp, functionTable) {
@@ -383,7 +395,7 @@ function callCustom(id, argc, stack, sp, functionTable) {
     if (isError(stack[sp - i])) return stack[sp - i]
   }
 
-  const fn = functionTable[id - 64]
+  const fn = functionTable[id - 128]
   if (!fn) return celError(`unknown custom function id: ${id}`)
 
   // Fast paths for common arities (avoid Array allocation + spread)
@@ -561,6 +573,33 @@ function callBuiltin(id, argc, stack, sp) {
       return '"' + v.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"'
     }
 
+    case BUILTIN.STRING_FORMAT: {
+      const args = stack[sp]; const recv = stack[sp - 1]
+      if (!isStr(recv)) return celError('format() requires string receiver')
+      if (!isList(args)) return celError('format() requires list argument')
+      let result = ''
+      let argIdx = 0
+      for (let i = 0; i < recv.length; i++) {
+        if (recv[i] === '%') {
+          i++
+          if (i >= recv.length) return celError('format: unexpected end of format string')
+          const spec = recv[i]
+          if (spec === '%') { result += '%'; continue }
+          if (spec !== 's' && spec !== 'd') return celError(`format: unrecognized formatting clause "${spec}"`)
+          if (argIdx >= args.length) return celError('format: index out of range')
+          const val = args[argIdx++]
+          if (spec === 'd') {
+            result += typeof val === 'bigint' ? val.toString() : String(Number(val))
+          } else {
+            result += isStr(val) ? val : String(val)
+          }
+        } else {
+          result += recv[i]
+        }
+      }
+      return result
+    }
+
     // --- Type conversions ---
     case BUILTIN.TO_INT: {
       const v = stack[sp]
@@ -621,7 +660,10 @@ function callBuiltin(id, argc, stack, sp) {
       if (isNum(v)) return String(v)
       if (isBool(v)) return String(v)
       if (v === null) return 'null'
-      if (isBytes(v)) return new TextDecoder().decode(v)
+      if (isBytes(v)) {
+        try { return new TextDecoder('utf-8', { fatal: true }).decode(v) }
+        catch (_) { return celError('string() invalid UTF-8 in bytes') }
+      }
       if (isTimestamp(v)) return new Date(v.ms).toISOString().replace('.000Z', 'Z')
       if (isDuration(v)) return Math.trunc(v.ms / 1000) + 's'
       return celError(`string() not supported on ${celTypeName(v)}`)
@@ -1044,6 +1086,7 @@ export function evaluate(program, activation, customFunctionTable) {
 
   // Stack
   const stack = new Array(256)
+  const uintFlags = new Uint8Array(256)  // 1 = slot holds a uint value
   let sp = -1
 
   // Program counter
@@ -1062,6 +1105,7 @@ export function evaluate(program, activation, customFunctionTable) {
       case OP.PUSH_CONST: {
         const entry = consts[operands[0]]
         stack[++sp] = entry.value
+        uintFlags[sp] = entry.tag === TAG_UINT64 ? 1 : 0
         break
       }
 
@@ -1130,28 +1174,50 @@ export function evaluate(program, activation, customFunctionTable) {
 
       // ── Arithmetic ────────────────────────────────────────────────────────
       case OP.ADD: {
-        const b = stack[sp--]; const a = stack[sp]
-        stack[sp] = celAdd(a, b)
+        const bIsUint = uintFlags[sp]
+        const b = stack[sp--]; const aIsUint = uintFlags[sp]; const a = stack[sp]
+        if (aIsUint && bIsUint && isInt(a) && isInt(b)) {
+          stack[sp] = checkUintOverflow(a + b)
+        } else {
+          stack[sp] = celAdd(a, b)
+        }
+        uintFlags[sp] = aIsUint && bIsUint ? 1 : 0
         break
       }
       case OP.SUB: {
-        const b = stack[sp--]; const a = stack[sp]
-        stack[sp] = celSub(a, b)
+        const bIsUint = uintFlags[sp]
+        const b = stack[sp--]; const aIsUint = uintFlags[sp]; const a = stack[sp]
+        if (aIsUint && bIsUint && isInt(a) && isInt(b)) {
+          stack[sp] = checkUintOverflow(a - b)
+        } else {
+          stack[sp] = celSub(a, b)
+        }
+        uintFlags[sp] = aIsUint && bIsUint ? 1 : 0
         break
       }
       case OP.MUL: {
-        const b = stack[sp--]; const a = stack[sp]
-        stack[sp] = celMul(a, b)
+        const bIsUint = uintFlags[sp]
+        const b = stack[sp--]; const aIsUint = uintFlags[sp]; const a = stack[sp]
+        if (aIsUint && bIsUint && isInt(a) && isInt(b)) {
+          stack[sp] = checkUintOverflow(a * b)
+        } else {
+          stack[sp] = celMul(a, b)
+        }
+        uintFlags[sp] = aIsUint && bIsUint ? 1 : 0
         break
       }
       case OP.DIV: {
-        const b = stack[sp--]; const a = stack[sp]
+        const bIsUint = uintFlags[sp]
+        const b = stack[sp--]; const aIsUint = uintFlags[sp]; const a = stack[sp]
         stack[sp] = celDiv(a, b)
+        uintFlags[sp] = aIsUint && bIsUint ? 1 : 0
         break
       }
       case OP.MOD: {
-        const b = stack[sp--]; const a = stack[sp]
+        const bIsUint = uintFlags[sp]
+        const b = stack[sp--]; const aIsUint = uintFlags[sp]; const a = stack[sp]
         stack[sp] = celMod(a, b)
+        uintFlags[sp] = aIsUint && bIsUint ? 1 : 0
         break
       }
       case OP.POW: {
@@ -1160,7 +1226,12 @@ export function evaluate(program, activation, customFunctionTable) {
         break
       }
       case OP.NEG: {
-        stack[sp] = celNeg(stack[sp])
+        if (uintFlags[sp]) {
+          stack[sp] = celError('no such overload: -uint')
+        } else {
+          stack[sp] = celNeg(stack[sp])
+        }
+        uintFlags[sp] = 0
         break
       }
 
@@ -1298,7 +1369,7 @@ export function evaluate(program, activation, customFunctionTable) {
       case OP.CALL: {
         const builtinId = operands[0]
         const argc = operands[1]
-        const result = builtinId >= 64
+        const result = builtinId >= 128
           ? callCustom(builtinId, argc, stack, sp, customFunctionTable)
           : callBuiltin(builtinId, argc, stack, sp)
         sp -= argc - 1
