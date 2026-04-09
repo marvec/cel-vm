@@ -22,7 +22,8 @@
   "files": [
     "src/",
     "bin/",
-    "NOTICES"
+    "NOTICES",
+    "DOCS.md"
   ],
   "scripts": {
     "test": "bun test",
