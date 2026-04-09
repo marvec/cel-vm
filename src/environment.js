@@ -15,7 +15,7 @@ import { parse } from './parser.js'
 import { check } from './checker.js'
 import { compile as compileAst } from './compiler.js'
 import { encode, decode } from './bytecode.js'
-import { evaluate as evalProgram } from './vm.js'
+import { evaluate as evalProgram, evaluateDebug as evalProgramDebug } from './vm.js'
 
 // Const pool tags (must match bytecode.js / compiler.js)
 const TAG_NULL   = 0
@@ -55,7 +55,17 @@ export class Environment {
     this._methods = new Map()         // name → {id, impl, arity}
     this._declaredVars = null         // null = permissive; Map = strict
     this._nextCustomId = CUSTOM_ID_BASE
+    this._debug = false
     this._limits = options.limits || null
+  }
+
+  /**
+   * Enable debug mode: compile emits source positions, evaluate enriches errors.
+   * @returns {this}
+   */
+  enableDebug() {
+    this._debug = true
+    return this
   }
 
   /**
@@ -142,7 +152,7 @@ export class Environment {
     const ast     = parse(tokens, this._limits)
     const checked = check(ast)
     const program = compileAst(checked, {
-      debugInfo: options.debugInfo || false,
+      debugInfo: this._debug || options.debugInfo || false,
       env: config,
     })
     return encode(program)
@@ -157,7 +167,8 @@ export class Environment {
   evaluate(bytecode, activation) {
     const program = decode(bytecode)
     const config = this.toConfig()
-    return evalProgram(program, activation || {}, config.functionTable)
+    const evalFn = this._debug ? evalProgramDebug : evalProgram
+    return evalFn(program, activation || {}, config.functionTable)
   }
 
   /**

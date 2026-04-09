@@ -263,10 +263,12 @@ export function compile(ast, options = {}) {
   // ── 3. Instruction list ────────────────────────────────────────────────────
   const instrs = []
   const debugEntries = []
+  let currentLine = 0
+  let currentCol = 0
 
   function emit(op, ...operands) {
     instrs.push({ op, operands })
-    if (emitDebug) debugEntries.push({ line: 0, col: 0 })
+    if (emitDebug) debugEntries.push({ line: currentLine, col: currentCol })
     return instrs.length - 1  // instruction index
   }
 
@@ -298,6 +300,21 @@ export function compile(ast, options = {}) {
   // ── 5. Core compile dispatcher ────────────────────────────────────────────
 
   function compileNode(node) {
+    // Save and restore debug position so parent's position survives child compilation
+    const prevLine = currentLine
+    const prevCol = currentCol
+    if (emitDebug && node.line !== undefined) {
+      currentLine = node.line
+      currentCol = node.col
+    }
+    _compileNodeInner(node)
+    if (emitDebug) {
+      currentLine = prevLine
+      currentCol = prevCol
+    }
+  }
+
+  function _compileNodeInner(node) {
     switch (node.type) {
       case 'NullLit': {
         const idx = addConst(TAG_NULL, null)

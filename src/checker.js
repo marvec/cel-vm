@@ -42,8 +42,8 @@ function Ternary(cond, thenNode, elseNode) {
 // Comprehension builders
 // ---------------------------------------------------------------------------
 
-function makeComprehension(iterVar, iterRange, accuVar, accuInit, loopCondition, loopStep, result) {
-  return {
+function makeComprehension(iterVar, iterRange, accuVar, accuInit, loopCondition, loopStep, result, srcNode) {
+  const node = {
     type: 'Comprehension',
     iterVar,
     iterRange,
@@ -53,13 +53,18 @@ function makeComprehension(iterVar, iterRange, accuVar, accuInit, loopCondition,
     loopStep,
     result,
   }
+  if (srcNode && srcNode.line !== undefined) {
+    node.line = srcNode.line
+    node.col = srcNode.col
+  }
+  return node
 }
 
 // ---------------------------------------------------------------------------
 // Macro expansion helpers
 // ---------------------------------------------------------------------------
 
-function expandExists(iterRange, iterVar, pred) {
+function expandExists(iterRange, iterVar, pred, srcNode) {
   return makeComprehension(
     iterVar,
     iterRange,
@@ -68,10 +73,11 @@ function expandExists(iterRange, iterVar, pred) {
     Unary('!', Ident('__result__')),              // keep looping while not found
     Binary('||', Ident('__result__'), pred),       // OR into accumulator
     Ident('__result__'),
+    srcNode,
   )
 }
 
-function expandAll(iterRange, iterVar, pred) {
+function expandAll(iterRange, iterVar, pred, srcNode) {
   return makeComprehension(
     iterVar,
     iterRange,
@@ -80,10 +86,11 @@ function expandAll(iterRange, iterVar, pred) {
     Ident('__result__'),                          // keep looping while all true
     Binary('&&', Ident('__result__'), pred),      // AND into accumulator
     Ident('__result__'),
+    srcNode,
   )
 }
 
-function expandFilter(iterRange, iterVar, pred) {
+function expandFilter(iterRange, iterVar, pred, srcNode) {
   return makeComprehension(
     iterVar,
     iterRange,
@@ -96,10 +103,11 @@ function expandFilter(iterRange, iterVar, pred) {
       Ident('__result__'),
     ),
     Ident('__result__'),
+    srcNode,
   )
 }
 
-function expandMap(iterRange, iterVar, f) {
+function expandMap(iterRange, iterVar, f, srcNode) {
   return makeComprehension(
     iterVar,
     iterRange,
@@ -108,10 +116,11 @@ function expandMap(iterRange, iterVar, f) {
     BoolLit(true),                               // never early-exit
     Binary('+', Ident('__result__'), List([f])),
     Ident('__result__'),
+    srcNode,
   )
 }
 
-function expandExistsOne(iterRange, iterVar, pred) {
+function expandExistsOne(iterRange, iterVar, pred, srcNode) {
   return makeComprehension(
     iterVar,
     iterRange,
@@ -124,10 +133,11 @@ function expandExistsOne(iterRange, iterVar, pred) {
       Ident('__result__'),
     ),
     Binary('==', Ident('__result__'), IntLit(1n)),
+    srcNode,
   )
 }
 
-function expandBind(iterVar, val, body) {
+function expandBind(iterVar, val, body, srcNode) {
   return makeComprehension(
     iterVar,
     List([val]),
@@ -136,6 +146,7 @@ function expandBind(iterVar, val, body) {
     BoolLit(false),                              // exit immediately
     BoolLit(false),
     body,
+    srcNode,
   )
 }
 
@@ -161,7 +172,7 @@ function tryExpandRCallMacro(node) {
     args[0].type === 'Ident'
   ) {
     const [iterVarNode, val, body] = args
-    return expandBind(iterVarNode.name, val, body)
+    return expandBind(iterVarNode.name, val, body, node)
   }
 
   // list.exists(x, pred) / all / filter / map / exists_one
@@ -182,11 +193,11 @@ function tryExpandRCallMacro(node) {
     const expr = args[1]
 
     switch (method) {
-      case 'exists':     return expandExists(iterRange, iterVar, expr)
-      case 'all':        return expandAll(iterRange, iterVar, expr)
-      case 'filter':     return expandFilter(iterRange, iterVar, expr)
-      case 'map':        return expandMap(iterRange, iterVar, expr)
-      case 'exists_one': return expandExistsOne(iterRange, iterVar, expr)
+      case 'exists':     return expandExists(iterRange, iterVar, expr, node)
+      case 'all':        return expandAll(iterRange, iterVar, expr, node)
+      case 'filter':     return expandFilter(iterRange, iterVar, expr, node)
+      case 'map':        return expandMap(iterRange, iterVar, expr, node)
+      case 'exists_one': return expandExistsOne(iterRange, iterVar, expr, node)
     }
   }
 
@@ -215,7 +226,9 @@ function tryExpandCallMacro(node) {
     if (DANGEROUS_FIELDS.has(arg.field)) {
       throw new CheckError(`field name '${arg.field}' is not allowed`)
     }
-    return { type: 'HasMacro', expr: arg }
+    const result = { type: 'HasMacro', expr: arg }
+    if (node.line !== undefined) { result.line = node.line; result.col = node.col }
+    return result
   }
 
   return null

@@ -17,9 +17,10 @@ import { OP, BUILTIN } from './bytecode.js'
 // ---------------------------------------------------------------------------
 
 export class EvaluationError extends Error {
-  constructor(msg) {
+  constructor(msg, instrIndex = -1) {
     super(msg)
     this.name = 'EvaluationError'
+    this.instrIndex = instrIndex
   }
 }
 
@@ -39,7 +40,7 @@ function isDuration(v)  { return v !== null && typeof v === 'object' && v.__celD
 function isOpt(v)    { return v !== null && typeof v === 'object' && v.__celOptional === true }
 function isError(v)  { return v !== null && typeof v === 'object' && v.__celError === true }
 
-function celError(msg) { return { __celError: true, message: msg } }
+function celError(msg) { return { __celError: true, message: msg, _instrIndex: -1 } }
 
 // ---------------------------------------------------------------------------
 // Celtype helpers
@@ -1084,7 +1085,7 @@ export function evaluate(program, activation, customFunctionTable) {
 
       case OP.RETURN: {
         const result = stack[sp]
-        if (isError(result)) throw new EvaluationError(result.message)
+        if (isError(result)) throw new EvaluationError(result.message, result._instrIndex >= 0 ? result._instrIndex : pc - 1)
         return result
       }
 
@@ -1098,14 +1099,14 @@ export function evaluate(program, activation, customFunctionTable) {
         const cond = stack[sp--]
         // Errors and non-bool: don't jump (fall through to evaluate other branch)
         if (cond === false) pc += operands[0]
-        else if (!isBool(cond) && !isError(cond)) throw new EvaluationError(`JUMP_IF_FALSE requires bool, got ${celTypeName(cond)}`)
+        else if (!isBool(cond) && !isError(cond)) throw new EvaluationError(`JUMP_IF_FALSE requires bool, got ${celTypeName(cond)}`, pc - 1)
         break
       }
 
       case OP.JUMP_IF_TRUE: {
         const cond = stack[sp--]
         if (cond === true) pc += operands[0]
-        else if (!isBool(cond) && !isError(cond)) throw new EvaluationError(`JUMP_IF_TRUE requires bool, got ${celTypeName(cond)}`)
+        else if (!isBool(cond) && !isError(cond)) throw new EvaluationError(`JUMP_IF_TRUE requires bool, got ${celTypeName(cond)}`, pc - 1)
         break
       }
 
@@ -1481,12 +1482,43 @@ export function evaluate(program, activation, customFunctionTable) {
       }
 
       default:
-        throw new EvaluationError(`unknown opcode: ${op}`)
+        throw new EvaluationError(`unknown opcode: ${op}`, pc - 1)
+    }
+    // Tag fresh errors with their originating instruction index (for debug source mapping)
+    if (sp >= 0 && isError(stack[sp]) && stack[sp]._instrIndex < 0) {
+      stack[sp]._instrIndex = pc - 1
     }
   }
 
   // Should not reach here if bytecode ends with RETURN
   const result = stack[sp]
-  if (isError(result)) throw new EvaluationError(result.message)
+  if (isError(result)) throw new EvaluationError(result.message, result._instrIndex >= 0 ? result._instrIndex : pc - 1)
   return result
+}
+
+/**
+ * Debug-aware evaluate — wraps evaluate() and enriches EvaluationError
+ * with source {line, col} from the program's debug info.
+ * Zero cost when not called — production code uses evaluate() directly.
+ *
+ * @param {object} program   - decoded program (must include debugInfo if available)
+ * @param {object} activation - map of variable name → value
+ * @param {Array}  [customFunctionTable]
+ * @returns {*} the result value
+ */
+export function evaluateDebug(program, activation, customFunctionTable) {
+  const { debugInfo } = program
+  try {
+    return evaluate(program, activation, customFunctionTable)
+  } catch (e) {
+    if (e instanceof EvaluationError && debugInfo && e.instrIndex >= 0) {
+      const entry = debugInfo[e.instrIndex]
+      if (entry && (entry.line > 0 || entry.col > 0)) {
+        e.line = entry.line
+        e.col = entry.col
+        e.message = `${e.message} at ${entry.line}:${entry.col}`
+      }
+    }
+    throw e
+  }
 }
