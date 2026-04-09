@@ -1,0 +1,33 @@
+import { describe, it } from 'node:test'
+import assert from 'node:assert/strict'
+import { assertCel, cel } from '../helpers.js'
+
+describe('built-in functions', () => {
+  it('size(string)', () => assertCel('size("hello")', 5n))
+  it('size(list)', () => assertCel('size([1, 2, 3])', 3n))
+  it('size(map)', () => assertCel('size({"a": 1})', 1n))
+  it('string.size()', () => assertCel('"hello".size()', 5n))
+  it('string.contains() true', () => assertCel('"hello world".contains("world")', true))
+  it('string.contains() false', () => assertCel('"hello".contains("xyz")', false))
+  it('string.startsWith() true', () => assertCel('"hello".startsWith("hel")', true))
+  it('string.startsWith() false', () => assertCel('"hello".startsWith("xyz")', false))
+  it('string.endsWith() true', () => assertCel('"hello".endsWith("llo")', true))
+  it('string.endsWith() false', () => assertCel('"hello".endsWith("xyz")', false))
+  it('string.lowerAscii()', () => assertCel('"HELLO".lowerAscii()', 'hello'))
+  it('string.upperAscii()', () => assertCel('"hello".upperAscii()', 'HELLO'))
+  it('string.trim()', () => assertCel('"  hello  ".trim()', 'hello'))
+  it('string.substring(start)', () => assertCel('"hello".substring(2)', 'llo'))
+  it('string.substring(start,end)', () => assertCel('"hello".substring(1, 3)', 'el'))
+  it('string.indexOf()', () => assertCel('"hello".indexOf("ll")', 2n))
+  it('string.split()', () => assertCel('"a,b,c".split(",")', ['a', 'b', 'c']))
+  it('string.replace()', () => assertCel('"hello world".replace("world", "CEL")', 'hello CEL'))
+  it('int(string)', () => assertCel('int("42")', 42n))
+  it('int(double)', () => assertCel('int(3.7)', 3n))
+  it('double(string)', () => assertCel('double("3.14")', 3.14))
+  it('double(int)', () => assertCel('double(42)', 42.0))
+  it('string(int)', () => assertCel('string(42)', '42'))
+  it('string(bool)', () => assertCel('string(true)', 'true'))
+  it('bool("true")', () => assertCel('bool("true")', true))
+  it('bool("false")', () => assertCel('bool("false")', false))
+  it('type() returns type name string', () => assertCel('type(1)', 'int'))
+})
