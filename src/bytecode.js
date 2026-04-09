@@ -62,6 +62,7 @@ export const BUILTIN = {
   MATH_SIGN: 55, MATH_IS_NAN: 56, MATH_IS_INF: 57, MATH_IS_FINITE: 58,
   MATH_BIT_AND: 59, MATH_BIT_OR: 60, MATH_BIT_XOR: 61, MATH_BIT_NOT: 62,
   MATH_BIT_SHIFT_LEFT: 63, MATH_BIT_SHIFT_RIGHT: 64,
+  STRING_FORMAT: 65,
 };
 
 // ---------------------------------------------------------------------------

@@ -2,7 +2,7 @@
 //
 //   compile(src, options?)   → Uint8Array  (or throws LexError | ParseError | CheckError | CompileError)
 //   evaluate(bytecode, activation?)  → value  (or throws BytecodeError | EvaluationError)
-//   load(b64)                → Uint8Array  (decode Base64 → bytecode; throws BytecodeError)
+//   fromB64(b64)             → Uint8Array  (decode Base64 → bytecode; throws BytecodeError)
 //   run(src, activation?)    → value  (convenience: compile + evaluate, with caching)
 
 import { tokenize } from './lexer.js'
@@ -66,12 +66,12 @@ export function evaluate(bytecode, activation, customFunctionTable) {
 }
 
 /**
- * Load bytecode from a Base64 string (for transport via JSON/DB/localStorage).
+ * Decode bytecode from a Base64 string (for transport via JSON/DB/localStorage).
  *
  * @param {string} b64 - Base64-encoded bytecode
  * @returns {Uint8Array}
  */
-export function load(b64) {
+export function fromB64(b64) {
   return fromBase64(b64)
 }
 

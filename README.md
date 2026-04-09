@@ -70,22 +70,22 @@ evaluate(bytecode, { x: 1n, y: 2n })   // → 3n
 
 This is the hot path. Pre-compile once, evaluate many times. Use `program()` for a more ergonomic wrapper around this pattern. See [DOCS.md](DOCS.md#compilesrc-options) for compile/evaluate parameter details.
 
-### `toB64(bytecode)` / `load(base64)` — serialise and load
+### `toB64(bytecode)` / `fromB64(base64)` — serialise and deserialise
 
 ```js
-import { compile, evaluate, toB64, load } from 'cel-vm'
+import { compile, evaluate, toB64, fromB64 } from 'cel-vm'
 
 // Compile and serialise to Base64 for storage
 const bytecode = compile('score > 90')
 const b64 = toB64(bytecode)
 // → "Q0UBAAABAgAAAA..." — store this in a database, config file, etc.
 
-// Later: load from Base64 and evaluate (no re-compilation)
-const loaded = load(b64)
+// Later: deserialise from Base64 and evaluate (no re-compilation)
+const loaded = fromB64(b64)
 evaluate(loaded, { score: 95n })  // → true
 ```
 
-See [DOCS.md](DOCS.md#tob64bytecode--loadbase64) for full parameter details.
+See [DOCS.md](DOCS.md#tob64bytecode--fromb64base64) for full parameter details.
 
 ### Activation values
 
@@ -236,9 +236,9 @@ bun run bench/compare.js
 
 ## cel-spec Conformance
 
-**1406 / 1610 tests passing (87.3%)**. All 315 marcbachmann/cel-js compatibility tests pass (100%).
+**1434 / 1583 tests passing (90.6%)**. 911 / 1060 cel-spec conformance tests (86.0%). All 315 marcbachmann/cel-js compatibility tests pass (100%).
 
-202 cel-spec tests are skipped (proto messages, enums, and other features that require protobuf schema support). See `docs/plans/2026-04-08-006-feat-skipped-test-gap-analysis-plan.md` for the full breakdown and implementation roadmap.
+149 cel-spec tests are skipped (proto messages, enums, and other features that require protobuf schema support). See `docs/plans/2026-04-08-006-feat-skipped-test-gap-analysis-plan.md` for the full breakdown and implementation roadmap.
 
 ### Divergences
 

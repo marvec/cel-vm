@@ -54,6 +54,7 @@ const METHOD_BUILTINS = {
   join:       BUILTIN.STRING_JOIN,
   charAt:     BUILTIN.STRING_CHAR_AT,
   lastIndexOf: BUILTIN.STRING_LAST_INDEX_OF,
+  format:     BUILTIN.STRING_FORMAT,
   // Timestamp / duration methods
   getFullYear:    BUILTIN.GET_FULL_YEAR,
   getMonth:       BUILTIN.GET_MONTH,
@@ -395,11 +396,15 @@ export function compile(ast, options = {}) {
           compileNode(operand)
           emit(OP.NOT)
         } else if (op === '-') {
-          // Constant fold: unary minus on literal (should be handled by parser, but just in case)
+          // Constant fold: unary minus on literal (skip if result overflows int64)
           if (operand.type === 'IntLit') {
-            const idx = addConst(TAG_INT64, -operand.value)
-            emit(OP.PUSH_CONST, idx)
-            break
+            const neg = -operand.value
+            if (neg >= -(2n ** 63n) && neg <= 2n ** 63n - 1n) {
+              const idx = addConst(TAG_INT64, neg)
+              emit(OP.PUSH_CONST, idx)
+              break
+            }
+            // overflow — fall through to emit NEG opcode so VM can report the error
           }
           if (operand.type === 'FloatLit') {
             const idx = addConst(TAG_DOUBLE, -operand.value)
@@ -720,14 +725,16 @@ export function compile(ast, options = {}) {
       return
     }
 
-    // Custom functions from environment
+    // Custom functions from environment (supports arity-based overloads)
     if (env && env.customFunctions.has(name)) {
-      const { id, arity } = env.customFunctions.get(name)
-      if (args.length !== arity) {
-        throw new CompileError(`'${name}' expects ${arity} argument(s), got ${args.length}`)
+      const overloads = env.customFunctions.get(name)
+      const match = overloads.find(o => o.arity === args.length)
+      if (!match) {
+        const arities = overloads.map(o => o.arity).join(', ')
+        throw new CompileError(`no overload of '${name}' accepts ${args.length} argument(s) (available: ${arities})`)
       }
       for (const a of args) compileNode(a)
-      emit(OP.CALL, id, args.length)
+      emit(OP.CALL, match.id, args.length)
       return
     }
 
@@ -825,15 +832,17 @@ export function compile(ast, options = {}) {
       return
     }
 
-    // Custom methods from environment
+    // Custom methods from environment (supports arity-based overloads)
     if (env && env.customMethods.has(method)) {
-      const { id, arity } = env.customMethods.get(method)
-      if (args.length !== arity) {
-        throw new CompileError(`method '${method}' expects ${arity} argument(s), got ${args.length}`)
+      const overloads = env.customMethods.get(method)
+      const match = overloads.find(o => o.arity === args.length)
+      if (!match) {
+        const arities = overloads.map(o => o.arity).join(', ')
+        throw new CompileError(`no overload of method '${method}' accepts ${args.length} argument(s) (available: ${arities})`)
       }
       compileNode(receiver)
       for (const a of args) compileNode(a)
-      emit(OP.CALL, id, args.length + 1) // +1 for receiver
+      emit(OP.CALL, match.id, args.length + 1) // +1 for receiver
       return
     }
 

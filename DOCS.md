@@ -64,15 +64,15 @@ import { run } from 'cel-vm'
 run('age >= 18', { age: 25n })  // → true
 ```
 
-### `toB64(bytecode)` / `load(base64)`
+### `toB64(bytecode)` / `fromB64(base64)`
 
-Serialise bytecode to Base64 and load it back.
+Serialise bytecode to Base64 and deserialise it back.
 
 ```js
-import { compile, toB64, load, evaluate } from 'cel-vm'
+import { compile, toB64, fromB64, evaluate } from 'cel-vm'
 
 const b64 = toB64(compile('x > 10'))
-const bytecode = load(b64)
+const bytecode = fromB64(b64)
 evaluate(bytecode, { x: 42n })  // → true
 ```
 
@@ -126,7 +126,7 @@ Constants take precedence over activation variables with the same name.
 
 ### `env.registerFunction(name, arity, impl)`
 
-Register a custom global function callable from CEL expressions.
+Register a custom global function callable from CEL expressions. Functions can be overloaded by arity (same name, different argument count).
 
 ```js
 env.registerFunction('isAdult', 1, (age) => age >= 18n)
@@ -144,9 +144,17 @@ env.registerFunction('clamp', 3, (val, lo, hi) => {
 
 **Note:** Custom function names must not conflict with built-in functions (`int`, `uint`, `double`, `string`, `bool`, `type`, `size`, `timestamp`, `duration`).
 
+**Overloads:** Register the same name with different arities:
+
+```js
+env.registerFunction('format', 1, (s) => String(s))
+env.registerFunction('format', 2, (s, fmt) => `${fmt}: ${s}`)
+// format("hi") → "[hi]", format("hi", 42) → "[hi:42]"
+```
+
 ### `env.registerMethod(name, arity, impl)`
 
-Register a custom method callable on any receiver value.
+Register a custom method callable on any receiver value. Methods can be overloaded by arity.
 
 ```js
 env.registerMethod('reverse', 0, (receiver) => {
@@ -254,8 +262,8 @@ const result = evaluate(bytecode, { x: 1n }, config.functionTable)
 ```js
 {
   constants: Map<string, {tag, value}>,
-  customFunctions: Map<string, {id, impl, arity}>,
-  customMethods: Map<string, {id, impl, arity}>,
+  customFunctions: Map<string, [{id, impl, arity}]>,  // array of overloads
+  customMethods: Map<string, [{id, impl, arity}]>,    // array of overloads
   declaredVars: Map<string, string> | null,
   functionTable: Function[],
 }

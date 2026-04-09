@@ -280,7 +280,7 @@ AST nodes are heap-allocated objects scattered in memory. The instruction array 
 ## Public API (`src/index.js`)
 
 ```js
-import { compile, evaluate, run, load, toB64 } from './src/index.js';
+import { compile, evaluate, run, fromB64, toB64 } from './src/index.js';
 
 // Compile once → Uint8Array bytecode
 const bytecode = compile('age >= 18 && country == "CZ"');
@@ -295,7 +295,7 @@ const result2 = run('1 + 2 * 3', {});
 const b64 = toB64(bytecode);
 
 // Load from storage
-const bytecode2 = load(b64);
+const bytecode2 = fromB64(b64);
 ```
 
 `compile()` accepts an optional `{ debugInfo: true }` flag to embed source locations in the binary (used by error messages and future debuggers).
@@ -310,21 +310,29 @@ The `Environment` class (`src/environment.js`) lets users extend cel-vm with cus
 
 ### Custom Function ID Scheme
 
-Built-in functions use BUILTIN IDs 0–53. Custom functions are assigned IDs starting at **64**, leaving room for ~10 more builtins. IDs are assigned sequentially in registration order. Functions and methods share the same ID space.
+Built-in functions use BUILTIN IDs 0–64. Custom functions are assigned IDs starting at **128**, leaving room for future builtins. IDs are assigned sequentially in registration order. Functions and methods share the same ID space.
 
 ### Split-Dispatch Strategy
 
-Custom functions reuse the existing `OP.CALL` opcode. The VM dispatch checks `id >= 64` and routes to a **separate** `callCustom()` function, keeping `callBuiltin()` completely untouched:
+Custom functions reuse the existing `OP.CALL` opcode. The VM dispatch checks `id >= 128` and routes to a **separate** `callCustom()` function, keeping `callBuiltin()` completely untouched:
 
 ```
 OP.CALL dispatch:
-  id < 64  → callBuiltin(id, argc, stack, sp)         // unchanged, monomorphic
-  id >= 64 → callCustom(id, argc, stack, sp, fnTable)  // separate function, separate JIT
+  id < 128  → callBuiltin(id, argc, stack, sp)          // unchanged, monomorphic
+  id >= 128 → callCustom(id, argc, stack, sp, fnTable)   // separate function, separate JIT
 ```
 
-This preserves V8's JIT profile for built-in function dispatch. The `id >= 64` branch is a cheap integer compare that V8's branch predictor learns is almost always false for built-in-only expressions.
+This preserves V8's JIT profile for built-in function dispatch. The `id >= 128` branch is a cheap integer compare that V8's branch predictor learns is almost always false for built-in-only expressions.
 
 `callCustom()` uses arity-specific fast paths for 1–3 arguments (direct call, zero allocation). Only 4+ arguments require array allocation.
+
+### Arity-Based Overloads
+
+Functions and methods support arity-based overloads: the same name can be registered with different argument counts. Internally, `_functions` and `_methods` store `Map<name, [{id, impl, arity}]>` (array of overloads per name). The compiler resolves overloads at compile time by matching the call-site argument count against registered arities.
+
+### Environment Caching
+
+`Environment.compile()` caches bytecode by source string (same strategy as the global `compile()`). The cache is invalidated when any registration method is called. `toConfig()` is also cached and invalidated on registration changes.
 
 ### Constants as Compile-Time Substitutions
 
@@ -336,7 +344,7 @@ If any variables are declared via `registerVariable()`, the compiler validates t
 
 ### Function Table
 
-The `Environment.toConfig()` method produces a `functionTable` array indexed by `id - 64`. This array is passed to `evaluate()` alongside the activation. The bytecode itself is portable (same binary format), but evaluation requires the matching function table.
+The `Environment.toConfig()` method produces a `functionTable` array indexed by `id - 128`. This array is passed to `evaluate()` alongside the activation. The bytecode itself is portable (same binary format), but evaluation requires the matching function table.
 
 ## Debug Source Mapping
 
