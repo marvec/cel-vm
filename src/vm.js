@@ -74,6 +74,14 @@ function checkIntOverflow(v) {
 }
 
 // ---------------------------------------------------------------------------
+// Timestamp/Duration range constants
+// ---------------------------------------------------------------------------
+const MIN_TS_MS = -62135596800000   // 0001-01-01T00:00:00Z
+const MAX_TS_MS = 253402300799999   // 9999-12-31T23:59:59.999Z
+const MAX_DUR_MS = 315576000000000  // +315576000000s
+const MIN_DUR_MS = -315576000000000 // -315576000000s
+
+// ---------------------------------------------------------------------------
 // Arithmetic helpers
 // ---------------------------------------------------------------------------
 
@@ -84,9 +92,27 @@ function celAdd(a, b) {
   if (isNum(a) && isNum(b)) return a + b
   if (isStr(a) && isStr(b)) return a + b
   if (isList(a) && isList(b)) return [...a, ...b]
-  if (isTimestamp(a) && isDuration(b)) return { __celTimestamp: true, ms: a.ms + b.ms }
-  if (isDuration(a) && isTimestamp(b)) return { __celTimestamp: true, ms: a.ms + b.ms }
-  if (isDuration(a) && isDuration(b)) return { __celDuration: true, ms: a.ms + b.ms }
+  if (isBytes(a) && isBytes(b)) {
+    const result = new Uint8Array(a.length + b.length)
+    result.set(a)
+    result.set(b, a.length)
+    return result
+  }
+  if (isTimestamp(a) && isDuration(b)) {
+    const ms = a.ms + b.ms
+    if (ms < MIN_TS_MS || ms > MAX_TS_MS) return celError('timestamp overflow')
+    return { __celTimestamp: true, ms }
+  }
+  if (isDuration(a) && isTimestamp(b)) {
+    const ms = a.ms + b.ms
+    if (ms < MIN_TS_MS || ms > MAX_TS_MS) return celError('timestamp overflow')
+    return { __celTimestamp: true, ms }
+  }
+  if (isDuration(a) && isDuration(b)) {
+    const ms = a.ms + b.ms
+    if (ms < MIN_DUR_MS || ms > MAX_DUR_MS) return celError('duration overflow')
+    return { __celDuration: true, ms }
+  }
   return celError(`no such overload: ${celTypeName(a)} + ${celTypeName(b)}`)
 }
 
@@ -95,9 +121,21 @@ function celSub(a, b) {
   if (isError(b)) return b
   if (isInt(a) && isInt(b)) return checkIntOverflow(a - b)
   if (isNum(a) && isNum(b)) return a - b
-  if (isTimestamp(a) && isDuration(b)) return { __celTimestamp: true, ms: a.ms - b.ms }
-  if (isTimestamp(a) && isTimestamp(b)) return { __celDuration: true, ms: a.ms - b.ms }
-  if (isDuration(a) && isDuration(b)) return { __celDuration: true, ms: a.ms - b.ms }
+  if (isTimestamp(a) && isDuration(b)) {
+    const ms = a.ms - b.ms
+    if (ms < MIN_TS_MS || ms > MAX_TS_MS) return celError('timestamp overflow')
+    return { __celTimestamp: true, ms }
+  }
+  if (isTimestamp(a) && isTimestamp(b)) {
+    const ms = a.ms - b.ms
+    if (ms < MIN_DUR_MS || ms > MAX_DUR_MS) return celError('duration overflow')
+    return { __celDuration: true, ms }
+  }
+  if (isDuration(a) && isDuration(b)) {
+    const ms = a.ms - b.ms
+    if (ms < MIN_DUR_MS || ms > MAX_DUR_MS) return celError('duration overflow')
+    return { __celDuration: true, ms }
+  }
   return celError(`no such overload: ${celTypeName(a)} - ${celTypeName(b)}`)
 }
 
@@ -193,6 +231,14 @@ function celLt(a, b) {
   if (isBool(a) && isBool(b)) return (a ? 1 : 0) < (b ? 1 : 0)
   if (isTimestamp(a) && isTimestamp(b)) return a.ms < b.ms
   if (isDuration(a) && isDuration(b)) return a.ms < b.ms
+  if (isBytes(a) && isBytes(b)) {
+    const len = Math.min(a.length, b.length)
+    for (let i = 0; i < len; i++) {
+      if (a[i] < b[i]) return true
+      if (a[i] > b[i]) return false
+    }
+    return a.length < b.length
+  }
   if (isInt(a) && isNum(b)) return Number(a) < b
   if (isNum(a) && isInt(b)) return a < Number(b)
   return celError(`no such overload: ${celTypeName(a)} < ${celTypeName(b)}`)
@@ -207,6 +253,14 @@ function celLe(a, b) {
   if (isBool(a) && isBool(b)) return (a ? 1 : 0) <= (b ? 1 : 0)
   if (isTimestamp(a) && isTimestamp(b)) return a.ms <= b.ms
   if (isDuration(a) && isDuration(b)) return a.ms <= b.ms
+  if (isBytes(a) && isBytes(b)) {
+    const len = Math.min(a.length, b.length)
+    for (let i = 0; i < len; i++) {
+      if (a[i] < b[i]) return true
+      if (a[i] > b[i]) return false
+    }
+    return a.length <= b.length
+  }
   if (isInt(a) && isNum(b)) return Number(a) <= b
   if (isNum(a) && isInt(b)) return a <= Number(b)
   return celError(`no such overload: ${celTypeName(a)} <= ${celTypeName(b)}`)
@@ -358,19 +412,54 @@ function callBuiltin(id, argc, stack, sp) {
       if (argc === 2) {
         const start = stack[sp]; const recv = stack[sp - 1]
         if (!isStr(recv)) return celError('substring() requires string receiver')
-        return codePointSubstring(recv, Number(start))
+        const s = Number(start)
+        const cpLen = codePointLen(recv)
+        if (s < 0 || s > cpLen) return celError('substring: index out of range')
+        return codePointSubstring(recv, s)
       } else {
         const end = stack[sp]; const start = stack[sp - 1]; const recv = stack[sp - 2]
         if (!isStr(recv)) return celError('substring() requires string receiver')
-        return codePointSubstring(recv, Number(start), Number(end))
+        const s = Number(start); const e = Number(end)
+        const cpLen = codePointLen(recv)
+        if (s < 0 || s > cpLen || e < s || e > cpLen) return celError('substring: index out of range')
+        return codePointSubstring(recv, s, e)
       }
     }
     case BUILTIN.STRING_INDEX_OF: {
+      if (argc === 3) {
+        const offset = stack[sp]; const sub = stack[sp - 1]; const recv = stack[sp - 2]
+        if (!isStr(recv) || !isStr(sub)) return celError('indexOf() requires strings')
+        const cpOffset = Number(offset)
+        let utf16Offset = 0
+        let cpCount = 0
+        for (let i = 0; i < recv.length && cpCount < cpOffset; ) {
+          const cp = recv.codePointAt(i)
+          i += cp > 0xFFFF ? 2 : 1
+          utf16Offset = i
+          cpCount++
+        }
+        const utf16Pos = recv.indexOf(sub, utf16Offset)
+        return utf16OffsetToCodePoint(recv, utf16Pos)
+      }
       const sub = stack[sp]; const recv = stack[sp - 1]
       if (!isStr(recv) || !isStr(sub)) return celError('indexOf() requires strings')
       return utf16OffsetToCodePoint(recv, recv.indexOf(sub))
     }
     case BUILTIN.STRING_SPLIT: {
+      if (argc === 3) {
+        const limit = stack[sp]; const sep = stack[sp - 1]; const recv = stack[sp - 2]
+        if (!isStr(recv) || !isStr(sep)) return celError('split() requires strings')
+        const lim = Number(limit)
+        if (lim === 0) return []
+        if (lim === 1) return [recv]
+        if (lim === -1) return recv.split(sep)
+        // CEL: limit means at most lim splits, so result has at most lim+1 elements
+        const parts = recv.split(sep)
+        if (parts.length <= lim + 1) return parts
+        const head = parts.slice(0, lim)
+        const tail = parts.slice(lim).join(sep)
+        return [...head, tail]
+      }
       const sep = stack[sp]; const recv = stack[sp - 1]
       if (!isStr(recv) || !isStr(sep)) return celError('split() requires strings')
       return recv.split(sep)
@@ -391,6 +480,24 @@ function callBuiltin(id, argc, stack, sp) {
       return recv.trim()
     }
     case BUILTIN.STRING_REPLACE: {
+      if (argc === 4) {
+        const limit = stack[sp]; const newStr = stack[sp - 1]; const oldStr = stack[sp - 2]; const recv = stack[sp - 3]
+        if (!isStr(recv)) return celError('replace() requires string receiver')
+        const lim = Number(limit)
+        if (lim === -1) return recv.split(oldStr).join(newStr)
+        if (lim === 0) return recv
+        let result = recv
+        let count = 0
+        let pos = 0
+        while (count < lim) {
+          const idx = result.indexOf(oldStr, pos)
+          if (idx === -1) break
+          result = result.slice(0, idx) + newStr + result.slice(idx + oldStr.length)
+          pos = idx + newStr.length
+          count++
+        }
+        return result
+      }
       const newStr = stack[sp]; const oldStr = stack[sp - 1]; const recv = stack[sp - 2]
       if (!isStr(recv)) return celError('replace() requires string receiver')
       return recv.split(oldStr).join(newStr)
@@ -430,8 +537,14 @@ function callBuiltin(id, argc, stack, sp) {
     // --- Type conversions ---
     case BUILTIN.TO_INT: {
       const v = stack[sp]
-      if (isInt(v)) return v
-      if (isNum(v)) return BigInt(Math.trunc(v))
+      if (isInt(v)) {
+        if (v > 9223372036854775807n || v < -9223372036854775808n) return celError('int overflow')
+        return v
+      }
+      if (isNum(v)) {
+        if (!isFinite(v) || v >= 9223372036854775808 || v <= -9223372036854775809) return celError('int overflow')
+        return BigInt(Math.trunc(v))
+      }
       if (isStr(v)) {
         try { return BigInt(v) } catch { return celError(`int() cannot parse: '${v}'`) }
       }
@@ -443,9 +556,13 @@ function callBuiltin(id, argc, stack, sp) {
       const v = stack[sp]
       if (isInt(v)) {
         if (v < 0n) return celError('uint() cannot convert negative int')
+        if (v > 18446744073709551615n) return celError('uint overflow')
         return v
       }
-      if (isNum(v)) return BigInt(Math.trunc(Math.abs(v)))
+      if (isNum(v)) {
+        if (v < 0 || v > 18446744073709551615 || !isFinite(v)) return celError('uint overflow')
+        return BigInt(Math.trunc(v))
+      }
       if (isStr(v)) {
         try {
           const n = BigInt(v)
@@ -486,8 +603,8 @@ function callBuiltin(id, argc, stack, sp) {
       const v = stack[sp]
       if (isBool(v)) return v
       if (isStr(v)) {
-        if (v === 'true') return true
-        if (v === 'false') return false
+        if (v === 'true' || v === 'TRUE' || v === 'True' || v === 't' || v === '1') return true
+        if (v === 'false' || v === 'FALSE' || v === 'False' || v === 'f' || v === '0') return false
         return celError(`bool() cannot parse: '${v}'`)
       }
       return celError(`bool() not supported on ${celTypeName(v)}`)
@@ -505,17 +622,27 @@ function callBuiltin(id, argc, stack, sp) {
     // --- Timestamp / Duration ---
     case BUILTIN.TIMESTAMP: {
       const v = stack[sp]
-      if (isInt(v)) return { __celTimestamp: true, ms: Number(v) * 1000 }
+      if (isTimestamp(v)) return v
+      if (isInt(v)) {
+        const ms = Number(v) * 1000
+        if (ms < MIN_TS_MS || ms > MAX_TS_MS) return celError('timestamp overflow')
+        return { __celTimestamp: true, ms }
+      }
       if (!isStr(v)) return celError('timestamp() requires string')
       const d = new Date(v)
       if (isNaN(d.getTime())) return celError(`timestamp() cannot parse: '${v}'`)
-      return { __celTimestamp: true, ms: d.getTime() }
+      const tsMs = d.getTime()
+      if (tsMs < MIN_TS_MS || tsMs > MAX_TS_MS) return celError('timestamp overflow')
+      return { __celTimestamp: true, ms: tsMs }
     }
     case BUILTIN.DURATION: {
       const v = stack[sp]
+      if (isDuration(v)) return v
       if (!isStr(v)) return celError('duration() requires string')
       try {
-        return { __celDuration: true, ms: parseDuration(v) }
+        const ms = parseDuration(v)
+        if (ms < MIN_DUR_MS || ms > MAX_DUR_MS) return celError('duration overflow')
+        return { __celDuration: true, ms }
       } catch { return celError(`duration() cannot parse: '${v}'`) }
     }
     case BUILTIN.GET_FULL_YEAR: {
@@ -687,7 +814,10 @@ function callBuiltin(id, argc, stack, sp) {
     }
     case BUILTIN.MATH_ABS: {
       const v = stack[sp]
-      if (isInt(v)) return v < 0n ? -v : v
+      if (isInt(v)) {
+        if (v === -9223372036854775808n) return celError('math.abs() overflow')
+        return v < 0n ? -v : v
+      }
       if (isNum(v)) return Math.abs(v)
       return celError('math.abs() requires numeric arg')
     }
@@ -723,6 +853,78 @@ function callBuiltin(id, argc, stack, sp) {
         if (celLt(v, best) === true) best = v
       }
       return best
+    }
+
+    case BUILTIN.MATH_CEIL: {
+      const v = stack[sp]
+      if (isNum(v)) return Math.ceil(v)
+      return celError('math.ceil() requires double arg')
+    }
+    case BUILTIN.MATH_FLOOR: {
+      const v = stack[sp]
+      if (isNum(v)) return Math.floor(v)
+      return celError('math.floor() requires double arg')
+    }
+    case BUILTIN.MATH_ROUND: {
+      const v = stack[sp]
+      if (isNum(v)) return Math.round(v)
+      return celError('math.round() requires double arg')
+    }
+    case BUILTIN.MATH_TRUNC: {
+      const v = stack[sp]
+      if (isNum(v)) return Math.trunc(v)
+      return celError('math.trunc() requires double arg')
+    }
+    case BUILTIN.MATH_SIGN: {
+      const v = stack[sp]
+      if (isInt(v)) return v > 0n ? 1n : v < 0n ? -1n : 0n
+      if (isNum(v)) return Math.sign(v)
+      return celError('math.sign() requires numeric arg')
+    }
+    case BUILTIN.MATH_IS_NAN: {
+      const v = stack[sp]
+      if (isNum(v)) return Number.isNaN(v)
+      return celError('math.isNaN() requires double arg')
+    }
+    case BUILTIN.MATH_IS_INF: {
+      const v = stack[sp]
+      if (isNum(v)) return !isFinite(v) && !Number.isNaN(v)
+      return celError('math.isInf() requires double arg')
+    }
+    case BUILTIN.MATH_IS_FINITE: {
+      const v = stack[sp]
+      if (isNum(v)) return isFinite(v)
+      return celError('math.isFinite() requires double arg')
+    }
+    case BUILTIN.MATH_BIT_AND: {
+      const a = stack[sp - 1], b = stack[sp]
+      if (isInt(a) && isInt(b)) return a & b
+      return celError('math.bitAnd() requires int args')
+    }
+    case BUILTIN.MATH_BIT_OR: {
+      const a = stack[sp - 1], b = stack[sp]
+      if (isInt(a) && isInt(b)) return a | b
+      return celError('math.bitOr() requires int args')
+    }
+    case BUILTIN.MATH_BIT_XOR: {
+      const a = stack[sp - 1], b = stack[sp]
+      if (isInt(a) && isInt(b)) return a ^ b
+      return celError('math.bitXor() requires int args')
+    }
+    case BUILTIN.MATH_BIT_NOT: {
+      const v = stack[sp]
+      if (isInt(v)) return ~v
+      return celError('math.bitNot() requires int arg')
+    }
+    case BUILTIN.MATH_BIT_SHIFT_LEFT: {
+      const a = stack[sp - 1], b = stack[sp]
+      if (isInt(a) && isInt(b)) return a << b
+      return celError('math.bitShiftLeft() requires int args')
+    }
+    case BUILTIN.MATH_BIT_SHIFT_RIGHT: {
+      const a = stack[sp - 1], b = stack[sp]
+      if (isInt(a) && isInt(b)) return a >> b
+      return celError('math.bitShiftRight() requires int args')
     }
 
     default:

@@ -660,65 +660,67 @@ cel-vm/
 
 ## 12. Open Questions
 
-- **Prototype-based messages (proto2/proto3):** cel-spec tests include proto message field access. Defer until after core is solid; treat proto messages as plain JS objects initially.
-- **RE2 regex:** `matches()` uses RE2 semantics. The native JS `RegExp` is PCRE-ish. Use it for MVP; add RE2 library as dev-optional if tests diverge.
-- ~~**Timestamp/Duration:** Full timestamp arithmetic requires a date library. Implement basic `getFullYear()` etc. via `Date` for MVP; mark timestamp tests as known-deferred.~~ **RESOLVED:** Timestamp/duration arithmetic, comparisons, type conversions, and all accessors (including timezone-aware variants) are fully implemented using native `Date` and `Intl.DateTimeFormat`. No external date library needed. All 12 timezone cel-spec tests pass.
-- **`uint64` overflow semantics:** CEL spec wraps on overflow. Requires explicit modulo `2n**64n` in arithmetic ops.
-- **Debug info inclusion:** Include debug section by default (useful for error messages) but allow stripping via `compile(src, {debug: false})`.
-- **`uint` vs `int` runtime distinction:** Both are stored as `BigInt` — the type difference exists only in the constant pool (`TAG_UINT64` vs `TAG_INT64`). This blocks `-(42u)` error detection and `0u - 1u` underflow. Options: (a) tagged value wrapper `{__celUint: true, value: 42n}`, (b) separate uint `Uint64Array`-backed pool, or (c) accept the spec divergence.
-- **CEL commutative error model for `&&`/`||`:** The current `JUMP_IF_FALSE_K → POP → [right]` compilation discards the left-side value. `error && true` returns `true` instead of `error`. Fix requires new opcodes (`OP.LOGICAL_AND`/`OP.LOGICAL_OR`) that combine two values with CEL's error semantics, or restructuring to preserve both values.
-- **String `size()` codepoint semantics:** `celSize()` returns `v.length` (UTF-16 code units). CEL spec says `size()` on strings is codepoint count. For SMP characters (emoji, etc.) these differ. Fix: `[...v].length`. Same issue affects `substring()` which uses UTF-16 offsets.
-- **Bytes literal escape semantics:** `b'\u00ff'` should produce UTF-8 bytes `[0xC3, 0xBF]` (2 bytes), but the lexer's `scanBytes()` produces `[0xFF]` (1 byte) because it uses `charCodeAt()` after `scanString()`. Fixing requires distinguishing `\u`/`\U` escapes (UTF-8 encode) from `\x`/octal escapes (raw byte value) in bytes context.
+- **Proto messages:** Out of scope — no protobuf runtime in JS. ~20 tests permanently skipped.
+- **RE2 regex:** `matches()` uses JS `RegExp` (PCRE-ish). No native RE2 in JS; minor semantic differences possible.
+- **`uint` vs `int` runtime distinction:** Both stored as `BigInt` — type distinction lost after compilation. Blocks `-(42u)` error detection and `type(1) != type(1u)`. Options: (a) tagged wrapper `{__celUint: true, value}`, (b) accept spec divergence. Current recommendation: accept divergence (~44 tests affected).
+- **Nanosecond timestamp precision:** Timestamps use `Date` millisecond resolution. Changing to `{seconds, nanos}` would touch all timestamp operations. ~5 tests affected. Defer.
+- **Bytes literal escape semantics:** `b'\u00ff'` produces `[0xFF]` (1 byte) instead of UTF-8 `[0xC3, 0xBF]` (2 bytes). Needs lexer `scanBytes()` changes for `\u`/`\U` escapes.
+
+### Resolved
+
+- ~~**Timestamp/Duration**~~ — fully implemented with native `Date` + `Intl.DateTimeFormat`. All timezone accessor tests pass.
+- ~~**Commutative error model**~~ — `LOGICAL_AND`/`LOGICAL_OR` opcodes implement proper CEL error semantics.
+- ~~**String `size()` codepoint semantics**~~ — all string operations use code-point semantics.
+- ~~**Debug info inclusion**~~ — included by default, strippable via `compile(src, {debug: false})`.
 
 ---
 
-## 13. Remaining Skipped Tests — Low-Hanging Fruit Analysis
+## 13. Remaining Skipped Tests — Implementation Roadmap
 
-324 tests are currently skipped (down from 342 after Tier 1 work). 15 pre-existing failures remain. Here is a prioritised breakdown of what could be implemented using standard JS (no dependencies).
+**202 tests skipped** (down from 303 after Phase A). 0 failures. Full analysis in `docs/plans/2026-04-08-006-feat-skipped-test-gap-analysis-plan.md`.
 
-### Tier 1: Easy Wins — ✅ DONE (48 tests unskipped, 6 pre-existing failures fixed)
+### Phase A: Low-Hanging Fruit — COMPLETED (+101 tests → 86.9% conformance)
 
-Implemented in `feature/tier1-easy-wins` branch. Actual test counts differed from original estimates (original estimates in parentheses).
+| Category | Tests | Effort | Status |
+|----------|-------|--------|--------|
+| Math extensions (ceil, floor, round, trunc, sign, isNaN/isInf/isFinite, bitwise) | 32/33 | Low | Done — 1 skipped (bitNot uint: int/uint indistinguishable at runtime) |
+| Bytes comparison + concatenation | 15 | Low | Done |
+| Conversion edge cases (bool from string, range checks, identity conversions) | 23 | Low | Done |
+| Timestamp/Duration range validation | 10/12 | Low | Done — 2 skipped (nanosecond precision, duration range boundary) |
+| String overloads (indexOf offset, replace limit, split limit) | 9 | Low | Done |
 
-| Category | Tests | Status |
+### Phase B: Medium Effort (target: +40 tests → 88.1% conformance)
+
+| Category | Tests | Effort | Status |
+|----------|-------|--------|--------|
+| cel.bind() debugging | 8 | Medium | Pending — infrastructure exists, likely variable shadowing bug |
+| Error propagation in comprehension macros | 10 | Medium | Pending |
+| Error propagation in logic/ternary + logic edge cases | 10-15 | Medium | Pending — some may already pass |
+| Fields/Maps edge cases (map errors, mixed-type keys, qualified idents) | 10 | Medium | Pending |
+| Cross-type numeric comparisons (int/double already works) | 15 | Low-Med | Pending — unskip to check |
+| Unbound variables | 3 | Low | Pending |
+
+### Phase C: Optionals Completion (target: +40 tests → 90.7% conformance)
+
+| Category | Tests | Effort | Status |
+|----------|-------|--------|--------|
+| Optional methods (.value(), .or(), optMap, optFlatMap) | 30 | High | Pending — depends on cel.bind() |
+| Optional equality, list/map optionals, has() with optional | 37 | Medium | Pending |
+
+### Phase D: Deferred / Permanent Divergences (~39 tests)
+
+| Category | Tests | Reason |
 |----------|-------|--------|
-| **`math.greatest` / `math.least`** | 21 (est. 74) | ✅ Done — variable-arity BUILTIN dispatch. Remaining 53 in testdata need cross-type `dyn()` coercion (Tier 2). |
-| **String extensions** | 15 (est. 38) | ✅ Done — `charAt` (codepoint-aware), `lastIndexOf`, `strings.quote` (new namespace), `join`, `lowerAscii`/`upperAscii` unskipped. Remaining: `indexOf` with offset, `replace` with limit, `split` with limit, `substring` out-of-range. |
-| **Unicode SMP strings** | 5 (est. 9) | ✅ Done — JS handles surrogate pairs natively. No code changes needed. |
-| **Error short-circuit** | 7 (est. 1) | ✅ Partial — `JUMP_IF_FALSE_K`/`JUMP_IF_TRUE_K` now convert non-bool to `celError` instead of throwing. Also fixed `INDEX` opcode to reject non-integer indices. |
-| ~~**List index coercion**~~ | 0 (est. 18) | ✅ Already passing — `INDEX` opcode already coerces BigInt to Number. Removed from scope. |
-| **Integer math errors** | 0 (est. 5) | ⏭️ Deferred — `uint`/`int` both stored as BigInt at runtime, indistinguishable. Needs runtime type tagging. |
-| **Bytes escapes** | 0 (est. 4) | ⏭️ Deferred — `scanBytes()` needs different escape semantics for `\u` (UTF-8 encode) vs `\x` (raw byte). Plus bytes comparison operators not implemented. |
+| Proto-dependent | ~20 | No protobuf runtime — permanent divergence |
+| First-class type values | ~14 | Architectural change for few tests — deferred |
+| Nanosecond precision | ~5 | Representation change — deferred |
 
-**New finding — CEL commutative error model (10+ tests):** `&&`/`||` require that `error && false = false` and `error || true = true` in both orderings. The current compilation pattern (`JUMP → POP → right`) discards the left-side error. Proper fix needs new opcodes (`OP.LOGICAL_AND`/`OP.LOGICAL_OR`) or restructured compilation. Moved to Tier 2.
+### Previously Completed
 
-### Tier 2: Medium Effort — `dyn()` and Type Coercion (remaining ~300 tests)
-
-The single biggest unlock: cross-type numeric coercion and the commutative error model.
-
-| Category | Tests | What's Missing | Complexity |
-|----------|-------|----------------|------------|
-| **Cross-type comparisons** | 183 | `dyn(1) == 1u`, `dyn(1.0) == 1`, NaN handling | Medium — need coercion in EQ/NEQ/LT/LE/GT/GE |
-| **Optional extensions** | 67 | `optional.of()`, `hasValue()`, `orValue()`, `optMap()`, `optFlatMap()`, `or()`, `ofNonZeroValue()` | Medium — new wrapper type + ~7 builtins |
-| **Type conversions via dyn** | 55 | `int(dyn("36"))`, `bytes(dyn('\u00ff'))` | Medium — dyn-aware branches in TO_INT etc. |
-| **Map key coercion** | 35 | `{1u: 1.0}[1]` — normalize numeric keys | Medium — coercion in INDEX/SELECT for maps |
-| **Commutative error model** | 10+ | `error && false = false`, `error || true = true` in both orderings | Medium — new opcodes or restructured `&&`/`||` compilation |
-| **Macros with coercion** | 14 | `[1, 'foo'].exists(e, e != '1')` | Medium — depends on dyn support |
-| **`cel.bind()` macro** | 8 | `cel.bind(t, true, t)` | Medium — checker macro expansion |
-
-### Tier 3: Blocked on Architecture (22 tests)
-
-| Category | Tests | What's Missing |
-|----------|-------|----------------|
-| **Protobuf type identity** | ~22 | `type(timestamp(...)) == google.protobuf.Timestamp`, nanosecond precision in string output |
-
-### Recommended Implementation Order
-
-1. ~~**`math.greatest` / `math.least`**~~ ✅ Done
-2. ~~**String extensions**~~ ✅ Done (core subset)
-3. **`dyn()` + cross-type coercion** — 183+ tests, medium but highest total impact (unlocks ~70% of remaining skips)
-4. **Commutative error model for `&&`/`||`** — 10+ tests, unblocks error propagation tests across lists/maps/macros
-5. **Optional extensions** — 67 tests, independent of dyn
-6. **List/map key coercion** — 53 tests, builds on dyn
-7. **Remaining string extensions** — `indexOf` offset, `replace` limit, `split` limit
-8. **Remaining small categories** — uint type tagging, bytes escapes
+- ✅ `math.greatest` / `math.least` (21 tests)
+- ✅ String extensions core: `charAt`, `lastIndexOf`, `strings.quote`, `join` (15 tests)
+- ✅ Unicode SMP strings (5 tests)
+- ✅ Error short-circuit basics (7 tests)
+- ✅ Unicode code-point semantics for all string ops
+- ✅ 15 failing cel-spec conformance tests fixed
+- ✅ Timestamp/duration accessors with timezone support

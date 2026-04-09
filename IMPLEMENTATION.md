@@ -159,7 +159,7 @@ exit:
 
 The compiler maps built-in method names (`startsWith`, `contains`, `int`, …) to integer BUILTIN IDs so the VM dispatches on a number, not a string.
 
-**Opcode set** is capped at ~42 opcodes to keep V8's branch predictor effective:
+**Opcode set** is currently 47 opcodes (capped at ~50 for V8 branch predictor effectiveness):
 
 | Category | Opcodes |
 |----------|---------|
@@ -167,12 +167,14 @@ The compiler maps built-in method names (`startsWith`, `contains`, `int`, …) t
 | Jumps | `JUMP`, `JUMP_IF_FALSE`, `JUMP_IF_TRUE`, `JUMP_IF_FALSE_K`, `JUMP_IF_TRUE_K` |
 | Arithmetic | `ADD`, `SUB`, `MUL`, `DIV`, `MOD`, `POW`, `NEG` |
 | Comparison | `EQ`, `NEQ`, `LT`, `LE`, `GT`, `GE` |
-| Logic | `NOT`, `XOR` |
+| Logic | `NOT`, `XOR`, `LOGICAL_AND`, `LOGICAL_OR` |
 | Collections | `BUILD_LIST`, `BUILD_MAP`, `INDEX`, `IN` |
 | Field access | `SELECT`, `HAS_FIELD`, `OPT_SELECT` |
 | Functions | `CALL`, `SIZE` |
 | Iteration | `ITER_INIT`, `ITER_NEXT`, `ITER_POP`, `ACCUM_PUSH`, `ACCUM_SET` |
-| Optionals | `OPT_NONE`, `OPT_OF`, `OPT_OR_VALUE`, `OPT_CHAIN` |
+| Optionals | `OPT_NONE`, `OPT_OF`, `OPT_OR_VALUE`, `OPT_CHAIN`, `OPT_INDEX`, `OPT_HAS_VALUE`, `OPT_OF_NON_ZERO` |
+
+`LOGICAL_AND` and `LOGICAL_OR` implement CEL's commutative error semantics: `error && false = false`, `error || true = true`. They combine two values on the stack with proper error propagation, replacing the earlier `JUMP → POP` pattern that discarded left-side errors.
 
 ---
 
@@ -236,7 +238,7 @@ The VM is a **plain function** (not a class) containing a single `while (pc < le
 
 **Comprehension registers.** Two VM-level registers — `accu` (accumulator) and `iterElem` (current element) — hold comprehension state. `ACCUM_PUSH` initialises `accu`; `ACCUM_SET` updates it; `ITER_NEXT` advances the iterator and writes `iterElem`.
 
-**Built-in dispatch.** `CALL` carries a BUILTIN integer ID. The handler switches on this ID to call the appropriate implementation (string methods, type conversions, timestamp/duration accessors, math functions). No string lookup at runtime. String operations use Unicode code-point semantics per cel-spec: `size()`, `charAt()`, `indexOf()`, `lastIndexOf()`, `substring()`, and string indexing (`s[i]`) all count and index by code points, not UTF-16 code units. Zero-allocation helpers (`codePointLen`, `codePointCharAt`) avoid array spreading on the hot path; `indexOf`/`lastIndexOf` use native JS search then convert the UTF-16 offset to a code-point offset. String extensions also include `strings.quote`. Math extensions include `math.greatest` and `math.least` (variable-arity, support 1-N args or a single list arg). Namespace-qualified functions (`math.*`, `strings.*`) are resolved in the compiler via dedicated lookup tables.
+**Built-in dispatch.** `CALL` carries a BUILTIN integer ID. The handler switches on this ID to call the appropriate implementation (string methods, type conversions, timestamp/duration accessors, math functions). No string lookup at runtime. String operations use Unicode code-point semantics per cel-spec: `size()`, `charAt()`, `indexOf()`, `lastIndexOf()`, `substring()`, and string indexing (`s[i]`) all count and index by code points, not UTF-16 code units. Zero-allocation helpers (`codePointLen`, `codePointCharAt`) avoid array spreading on the hot path; `indexOf`/`lastIndexOf` use native JS search then convert the UTF-16 offset to a code-point offset. String extensions also include `strings.quote`. Math extensions include `math.greatest` and `math.least` (variable-arity, support 1-N args or a single list arg). Namespace-qualified functions (`math.*`, `strings.*`) are resolved in the compiler via dedicated lookup tables. Full math extensions: `math.ceil`, `math.floor`, `math.round`, `math.trunc` (double → double rounding), `math.abs` (int/uint/double, with int64 min overflow detection), `math.sign` (int/uint/double → same type), `math.isNaN`, `math.isInf`, `math.isFinite` (double → bool), and bitwise operations `math.bitAnd`, `math.bitOr`, `math.bitXor`, `math.bitNot`, `math.bitShiftLeft`, `math.bitShiftRight` (BigInt operands). Note: `bitNot` on uint values returns a signed result because int/uint are indistinguishable at runtime (both BigInt).
 
 **Timestamp and duration support.** `timestamp()` parses ISO 8601 strings via native `Date`; `duration()` parses Go-style strings (`"1h30m"`, `"300s"`). Both store milliseconds in tagged objects. Arithmetic (`+`, `-`) and comparisons (`<`, `<=`, `>`, `>=`, `==`, `!=`) are handled in the main opcode dispatch. Accessor methods (`getFullYear`, `getDate`, `getDayOfMonth`, `getDayOfWeek`, `getDayOfYear`, `getHours`, `getMinutes`, `getSeconds`, `getMilliseconds`) are dispatched via `CALL` with BUILTIN IDs. Duration accessors return **total** values per cel-spec (e.g. `duration("3730s").getMinutes()` = 62, not 2). Type conversions: `int(timestamp)` → Unix seconds, `string(timestamp)` → ISO 8601, `string(duration)` → Go format. No external date library — native `Date` and `Intl.DateTimeFormat` suffice. Precision is milliseconds; sub-millisecond nanosecond support is not yet implemented.
 

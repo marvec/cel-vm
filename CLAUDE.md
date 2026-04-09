@@ -11,6 +11,7 @@ CEL-VM is a high-performance Common Expression Language (CEL) evaluator in JavaS
 - If we diverge from cel-spec, document that in README.md
 - Any changes in the implementation/architecture must be reflected in IMPLEMENTATION.md
 - Any changes to usage must be documented in DOCS.md
+- **Performance analysis required:** When planning or implementing changes, always analyse impact on both **compile-time** (lexer → parser → checker → compiler → bytecode encoding) and **run-time** (VM dispatch loop, `evaluate()` hot path). The project's core value proposition is ~24× faster repeated evaluation — changes that degrade the hot path must be justified. Run `bun run bench/compare.js` before and after to verify.
 
 ## Workflow
 

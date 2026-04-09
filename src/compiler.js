@@ -96,6 +96,20 @@ const MATH_BUILTINS = {
   math_abs: BUILTIN.MATH_ABS,
   math_greatest: BUILTIN.MATH_GREATEST,
   math_least: BUILTIN.MATH_LEAST,
+  math_ceil: BUILTIN.MATH_CEIL,
+  math_floor: BUILTIN.MATH_FLOOR,
+  math_round: BUILTIN.MATH_ROUND,
+  math_trunc: BUILTIN.MATH_TRUNC,
+  math_sign: BUILTIN.MATH_SIGN,
+  math_isNaN: BUILTIN.MATH_IS_NAN,
+  math_isInf: BUILTIN.MATH_IS_INF,
+  math_isFinite: BUILTIN.MATH_IS_FINITE,
+  math_bitAnd: BUILTIN.MATH_BIT_AND,
+  math_bitOr: BUILTIN.MATH_BIT_OR,
+  math_bitXor: BUILTIN.MATH_BIT_XOR,
+  math_bitNot: BUILTIN.MATH_BIT_NOT,
+  math_bitShiftLeft: BUILTIN.MATH_BIT_SHIFT_LEFT,
+  math_bitShiftRight: BUILTIN.MATH_BIT_SHIFT_RIGHT,
 }
 
 // ---------------------------------------------------------------------------
