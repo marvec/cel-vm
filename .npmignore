@@ -1,0 +1,17 @@
+# Documentation & project files
+CLAUDE.md
+PLAN.md
+brief.md
+IMPLEMENTATION.md
+DOCS.md
+docs/
+
+# Development
+test/
+bench/
+.context/
+.github/
+.gitignore
+
+# Misc
+*.tgz
