@@ -50,6 +50,7 @@ export const TT = {
 export class LexError extends Error {
   constructor(msg, line, col) {
     super(`LexError at ${line}:${col}: ${msg}`)
+    this.name = 'LexError'
     this.line = line
     this.col = col
   }

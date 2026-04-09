@@ -1,8 +1,8 @@
 // CEL-VM public API
 //
 //   compile(src, options?)   → Uint8Array  (or throws LexError | ParseError | CheckError | CompileError)
-//   evaluate(bytecode, activation?)  → value  (or throws EvaluationError)
-//   load(b64)                → Uint8Array  (decode Base64 → bytecode)
+//   evaluate(bytecode, activation?)  → value  (or throws BytecodeError | EvaluationError)
+//   load(b64)                → Uint8Array  (decode Base64 → bytecode; throws BytecodeError)
 //   run(src, activation?)    → value  (convenience: compile + evaluate, with caching)
 
 import { tokenize } from './lexer.js'
@@ -13,11 +13,13 @@ import { encode, decode, toBase64, fromBase64 } from './bytecode.js'
 import { evaluate as evalProgram } from './vm.js'
 
 // Re-export error types for user convenience
-export { LexError }    from './lexer.js'
-export { ParseError }  from './parser.js'
-export { CheckError }  from './checker.js'
-export { CompileError } from './compiler.js'
-export { EvaluationError } from './vm.js'
+export { LexError }          from './lexer.js'
+export { ParseError }        from './parser.js'
+export { CheckError }        from './checker.js'
+export { CompileError }      from './compiler.js'
+export { EvaluationError }   from './vm.js'
+export { EnvironmentError }  from './environment.js'
+export { BytecodeError }     from './bytecode.js'
 export { Environment } from './environment.js'
 
 // Compiled bytecode cache: source string → Uint8Array

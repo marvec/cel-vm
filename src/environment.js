@@ -3,6 +3,13 @@
 // Collects custom function, constant, and variable declarations.
 // Produces a plain config object consumed by compiler and VM.
 
+export class EnvironmentError extends Error {
+  constructor(msg) {
+    super(msg)
+    this.name = 'EnvironmentError'
+  }
+}
+
 import { tokenize } from './lexer.js'
 import { parse } from './parser.js'
 import { check } from './checker.js'
@@ -60,10 +67,10 @@ export class Environment {
    */
   registerConstant(name, type, value) {
     if (this._constants.has(name) || this._functions.has(name)) {
-      throw new Error(`'${name}' is already registered`)
+      throw new EnvironmentError(`'${name}' is already registered`)
     }
     const tag = TYPE_TAGS[type]
-    if (tag === undefined) throw new Error(`Unknown constant type: '${type}'`)
+    if (tag === undefined) throw new EnvironmentError(`Unknown constant type: '${type}'`)
     this._constants.set(name, { tag, value })
     return this
   }
@@ -76,9 +83,9 @@ export class Environment {
    * @returns {this}
    */
   registerFunction(name, arity, impl) {
-    if (typeof impl !== 'function') throw new Error(`impl for '${name}' must be a function`)
+    if (typeof impl !== 'function') throw new EnvironmentError(`impl for '${name}' must be a function`)
     if (this._functions.has(name) || this._constants.has(name)) {
-      throw new Error(`'${name}' is already registered`)
+      throw new EnvironmentError(`'${name}' is already registered`)
     }
     const id = this._nextCustomId++
     this._functions.set(name, { id, impl, arity })
@@ -93,9 +100,9 @@ export class Environment {
    * @returns {this}
    */
   registerMethod(name, arity, impl) {
-    if (typeof impl !== 'function') throw new Error(`impl for '${name}' must be a function`)
+    if (typeof impl !== 'function') throw new EnvironmentError(`impl for '${name}' must be a function`)
     if (this._methods.has(name)) {
-      throw new Error(`method '${name}' is already registered`)
+      throw new EnvironmentError(`method '${name}' is already registered`)
     }
     const id = this._nextCustomId++
     this._methods.set(name, { id, impl, arity })
@@ -113,7 +120,7 @@ export class Environment {
   registerVariable(name, type) {
     if (this._declaredVars === null) this._declaredVars = new Map()
     if (this._declaredVars.has(name)) {
-      throw new Error(`variable '${name}' is already registered`)
+      throw new EnvironmentError(`variable '${name}' is already registered`)
     }
     this._declaredVars.set(name, type)
     return this

@@ -5,6 +5,7 @@ import { TT } from './lexer.js'
 export class ParseError extends Error {
   constructor(msg, line, col) {
     super(`ParseError at ${line}:${col}: ${msg}`)
+    this.name = 'ParseError'
     this.line = line
     this.col = col
   }

@@ -240,7 +240,15 @@ Bytecode compiled with custom functions references function IDs that only make s
 ## Error Types
 
 ```js
-import { LexError, ParseError, CheckError, CompileError, EvaluationError } from 'cel-vm'
+import {
+  LexError,           // tokenization failures
+  ParseError,         // syntax errors
+  CheckError,         // type/semantic errors
+  CompileError,       // compilation errors (undeclared vars, unknown functions)
+  EvaluationError,    // runtime errors
+  EnvironmentError,   // environment configuration errors (duplicate registrations, invalid types)
+  BytecodeError,      // bytecode encode/decode errors (corrupt data, bad magic, checksum mismatch)
+} from 'cel-vm'
 ```
 
-All errors include descriptive messages with source location when available.
+All errors extend `Error` and set `err.name` to their class name. `LexError` and `ParseError` also include `.line` and `.col` properties for source location.

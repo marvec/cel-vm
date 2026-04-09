@@ -10,6 +10,13 @@
  *   [checksum u32 Adler-32]
  */
 
+export class BytecodeError extends Error {
+  constructor(msg) {
+    super(msg)
+    this.name = 'BytecodeError'
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Opcode table
 // ---------------------------------------------------------------------------
@@ -262,7 +269,7 @@ export function encode(program) {
         break;
       }
       default:
-        throw new Error(`Unknown const tag: ${c.tag}`);
+        throw new BytecodeError(`Unknown const tag: ${c.tag}`);
     }
   }
 
@@ -330,13 +337,13 @@ export function encode(program) {
 export function decode(bytes) {
   // Verify checksum
   const bodyLen = bytes.length - 4;
-  if (bodyLen < 4) throw new Error('CEL bytecode too short');
+  if (bodyLen < 4) throw new BytecodeError('CEL bytecode too short');
 
   const storedChecksum = new DataView(bytes.buffer, bytes.byteOffset + bodyLen, 4).getUint32(0, false);
   const bodyBytes = bytes.subarray(0, bodyLen);
   const computedChecksum = adler32(bodyBytes);
   if (storedChecksum !== computedChecksum) {
-    throw new Error(`CEL bytecode checksum mismatch: expected 0x${computedChecksum.toString(16)}, got 0x${storedChecksum.toString(16)}`);
+    throw new BytecodeError(`CEL bytecode checksum mismatch: expected 0x${computedChecksum.toString(16)}, got 0x${storedChecksum.toString(16)}`);
   }
 
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -357,9 +364,9 @@ export function decode(bytes) {
 
   // --- Header ---
   const magic = readU16();
-  if (magic !== MAGIC) throw new Error(`Invalid CEL magic: 0x${magic.toString(16)}`);
+  if (magic !== MAGIC) throw new BytecodeError(`Invalid CEL magic: 0x${magic.toString(16)}`);
   const version = readU8();
-  if (version !== VERSION) throw new Error(`Unsupported CEL bytecode version: ${version}`);
+  if (version !== VERSION) throw new BytecodeError(`Unsupported CEL bytecode version: ${version}`);
   const flags = readU8();
   const hasDebug = (flags & FLAG_DEBUG) !== 0;
 
@@ -398,7 +405,7 @@ export function decode(bytes) {
         break;
       }
       default:
-        throw new Error(`Unknown const tag: ${tag} at byte ${pos}`);
+        throw new BytecodeError(`Unknown const tag: ${tag} at byte ${pos}`);
     }
   }
 
@@ -425,7 +432,7 @@ export function decode(bytes) {
     } else if (width === 3) {
       operands = [readU16(), readU8()];
     } else {
-      throw new Error(`Unknown operand width ${width} for opcode ${op}`);
+      throw new BytecodeError(`Unknown operand width ${width} for opcode ${op}`);
     }
     instrs.push({ op, operands });
   }
