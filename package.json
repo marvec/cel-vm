@@ -1,0 +1,51 @@
+{
+  "name": "@marvec/cel-vm",
+  "version": "1.0.0",
+  "author": {
+    "name": "Martin Večeřa",
+    "url": "https://github.com/marvec"
+  },
+  "description": "High-performance CEL (Common Expression Language) evaluator using a bytecode VM — compile once, evaluate many times",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./src/index.js",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "import": "./src/index.js"
+    }
+  },
+  "types": "./src/index.d.ts",
+  "bin": {
+    "cel": "./bin/cel.js"
+  },
+  "files": [
+    "src/",
+    "bin/"
+  ],
+  "scripts": {
+    "test": "bun test",
+    "test:lexer": "bun test test/lexer.test.js",
+    "bench": "bun run bench/compare.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "cel",
+    "cel-js",
+    "expression",
+    "bytecode",
+    "vm",
+    "common-expression-language",
+    "evaluator"
+  ],
+  "license": "GPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mvecera/cel-vm"
+  },
+  "devDependencies": {
+    "cel-js": "^0.8.2"
+  }
+}
