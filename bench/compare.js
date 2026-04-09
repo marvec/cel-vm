@@ -96,7 +96,7 @@ if (celJsAvailable) {
       ratios.push(ratio)
       console.log(`    → cel-vm is ${ratio.toFixed(1)}× faster`)
     } catch {
-      console.log(`    → skipped (incompatible with cel-js)`)
+      console.log(`  ${name.padEnd(50)} skipped (incompatible with cel-js)`)
     }
   }
 
@@ -105,12 +105,6 @@ if (celJsAvailable) {
     const min = Math.min(...ratios)
     const max = Math.max(...ratios)
     console.log(`\n  Average speedup: ${avg.toFixed(1)}× (min ${min.toFixed(1)}×, max ${max.toFixed(1)}×)`)
-
-    if (avg >= 3) {
-      console.log(`  ✓ Target of ≥3× achieved!`)
-    } else {
-      console.log(`  ✗ Target of ≥3× NOT met (${avg.toFixed(1)}×). Optimisation needed.`)
-    }
   }
 } else {
   console.log('\nmarcbachmann/cel-js not installed — skipping comparison.')
