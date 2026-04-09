@@ -56,18 +56,18 @@ evaluate(bytecode, { x: 1n, y: 2n })   // → 3n
 
 This is the hot path. Pre-compile once, evaluate many times.
 
-### `toB64(bytecode)` / `load(base64)` — serialise and load
+### `toB64(bytecode)` / `fromB64(base64)` — serialise and deserialise
 
 ```js
-import { compile, evaluate, toB64, load } from 'cel-vm'
+import { compile, evaluate, toB64, fromB64 } from 'cel-vm'
 
 // Compile and serialise to Base64 for storage
 const bytecode = compile('score > 90')
 const b64 = toB64(bytecode)
 // → "Q0UBAAABAgAAAA..." — store this in a database, config file, etc.
 
-// Later: load from Base64 and evaluate (no re-compilation)
-const loaded = load(b64)
+// Later: deserialise from Base64 and evaluate (no re-compilation)
+const loaded = fromB64(b64)
 evaluate(loaded, { score: 95n })  // → true
 ```
 

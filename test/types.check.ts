@@ -2,7 +2,7 @@
 // Run: bun x tsc --noEmit --strict --moduleResolution nodenext --module nodenext --target esnext test/types.test.ts
 
 import {
-  compile, evaluate, run, load, toB64,
+  compile, evaluate, run, fromB64, toB64,
   Environment,
   LexError, ParseError, CheckError, CompileError, EvaluationError,
   EnvironmentError, BytecodeError,
@@ -14,7 +14,7 @@ const bytecode: Uint8Array = compile('1 + 2')
 const bytecode2: Uint8Array = compile('x > 0', { debugInfo: true, cache: false })
 const result: unknown = evaluate(bytecode, { x: 10n })
 const b64: string = toB64(bytecode)
-const loaded: Uint8Array = load(b64)
+const loaded: Uint8Array = fromB64(b64)
 const quick: unknown = run('1 + 2', { x: 1n })
 
 // --- Environment API ---

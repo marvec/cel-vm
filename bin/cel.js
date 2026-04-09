@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { compile, evaluate, load, toB64, run } from '../src/index.js'
+import { compile, evaluate, fromB64, toB64, run } from '../src/index.js'
 
 const args = process.argv.slice(2)
 
@@ -66,7 +66,7 @@ try {
       console.error('Error: eval requires a Base64 bytecode string')
       process.exit(1)
     }
-    const bytecode = load(args[1])
+    const bytecode = fromB64(args[1])
     const vars = parseVars(args.slice(1))
     const result = evaluate(bytecode, vars)
     console.log(formatValue(result))
