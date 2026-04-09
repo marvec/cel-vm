@@ -337,3 +337,31 @@ If any variables are declared via `registerVariable()`, the compiler validates t
 ### Function Table
 
 The `Environment.toConfig()` method produces a `functionTable` array indexed by `id - 64`. This array is passed to `evaluate()` alongside the activation. The bytecode itself is portable (same binary format), but evaluation requires the matching function table.
+
+## Debug Source Mapping
+
+CEL-VM supports optional debug source mapping that enriches `EvaluationError` instances with the original `{line, col}` position from the CEL expression. Debug mode is off by default with zero runtime cost when disabled.
+
+### Activation
+
+Debug mode is activated via the `Environment` API:
+
+```javascript
+const env = new Environment().enableDebug()
+```
+
+When enabled, `env.compile()` automatically emits debug info (one `{line, col}` entry per bytecode instruction), and `env.evaluate()` dispatches to `evaluateDebug()` which enriches errors with source positions.
+
+### Architecture: Zero-Cost Design
+
+The production `evaluate()` function is untouched. `evaluateDebug()` is a separate function that wraps `evaluate()` in a try/catch and enriches `EvaluationError` with `{line, col}` from the debug info before rethrowing.
+
+The only change to the production hot path is a post-dispatch check that tags fresh `celError` values with their originating instruction index (`_instrIndex`). This check (`isError(stack[sp])`) short-circuits immediately for non-error values and only executes its body on error paths (cold).
+
+### Source Position Pipeline
+
+1. **Parser** — every AST node carries `{line, col}` from its primary token (operator for Binary, name for Call, etc.)
+2. **Checker** — macro-expanded Comprehension nodes inherit the call-site position
+3. **Compiler** — `compileNode()` saves/restores `currentLine`/`currentCol` so parent node positions survive child compilation. All emitted instructions inherit the current position.
+4. **Bytecode** — debug info is encoded in the `FLAG_DEBUG` section as `{line u16, col u16}` per instruction
+5. **VM** — `EvaluationError` carries `instrIndex`; `evaluateDebug()` maps it to `{line, col}` via the debug info array

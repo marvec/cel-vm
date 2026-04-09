@@ -164,6 +164,28 @@ Convenience: compile + evaluate in one call.
 env.run('clamp(score, 0, 100)', { score: 150n })  // → 100n
 ```
 
+### `env.enableDebug()`
+
+Enable debug source mapping. When enabled, `env.compile()` emits source position debug info, and `env.evaluate()` enriches `EvaluationError` instances with `{line, col}` from the original CEL expression. Returns `this` for chaining.
+
+```js
+const env = new Environment().enableDebug()
+
+try {
+  env.run('a / b + c', { a: 1n, b: 0n, c: 3n })
+} catch (e) {
+  console.log(e.line)     // 1
+  console.log(e.col)      // 3  (position of '/')
+  console.log(e.message)  // "division by zero at 1:3"
+}
+```
+
+Debug mode is off by default with zero runtime cost when disabled. The production `evaluate()` function is not modified — debug evaluation uses a separate code path.
+
+**Cross-flow behavior:**
+- Debug bytecode evaluated without debug mode: debug info is ignored, works normally
+- Non-debug bytecode evaluated with debug mode: errors have no source positions (graceful fallback)
+
 ### `env.toConfig()`
 
 Produce a plain config object for low-level use with `compile()` and `evaluate()`.
