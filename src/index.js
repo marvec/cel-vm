@@ -2,7 +2,7 @@
 //
 //   compile(src, options?)   → Uint8Array  (or throws LexError | ParseError | CheckError | CompileError)
 //   evaluate(bytecode, activation?)  → value  (or throws BytecodeError | EvaluationError)
-//   load(b64)                → Uint8Array  (decode Base64 → bytecode; throws BytecodeError)
+//   fromB64(b64)             → Uint8Array  (decode Base64 → bytecode; throws BytecodeError)
 //   run(src, activation?)    → value  (convenience: compile + evaluate, with caching)
 
 import { tokenize } from './lexer.js'
@@ -66,12 +66,12 @@ export function evaluate(bytecode, activation, customFunctionTable) {
 }
 
 /**
- * Load bytecode from a Base64 string (for transport via JSON/DB/localStorage).
+ * Decode bytecode from a Base64 string (for transport via JSON/DB/localStorage).
  *
  * @param {string} b64 - Base64-encoded bytecode
  * @returns {Uint8Array}
  */
-export function load(b64) {
+export function fromB64(b64) {
   return fromBase64(b64)
 }
 
@@ -83,6 +83,20 @@ export function load(b64) {
  */
 export function toB64(bytecode) {
   return toBase64(bytecode)
+}
+
+/**
+ * Compile a CEL expression and return a callable function.
+ * The returned function accepts an activation object and evaluates the expression.
+ *
+ * @param {string} src         - CEL expression
+ * @param {object} [options]   - same options as compile()
+ * @returns {(activation?: object) => *} callable that evaluates the expression
+ */
+export function program(src, options = {}) {
+  const bytecode = compile(src, options)
+  const functionTable = options.env ? options.env.functionTable : undefined
+  return (activation) => evaluate(bytecode, activation || {}, functionTable)
 }
 
 /**

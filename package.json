@@ -1,6 +1,10 @@
 {
   "name": "cel-vm",
-  "version": "0.1.0",
+  "version": "1.0.0",
+  "author": {
+    "name": "Martin Večeřa",
+    "url": "https://github.com/marvec"
+  },
   "description": "High-performance CEL (Common Expression Language) evaluator using a bytecode VM — compile once, evaluate many times",
   "type": "module",
   "sideEffects": false,

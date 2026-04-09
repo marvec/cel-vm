@@ -60,12 +60,12 @@ export function compile(src: string, options?: CompileOptions): Uint8Array;
 export function evaluate(bytecode: Uint8Array, activation?: Record<string, unknown>, customFunctionTable?: Function[]): unknown;
 
 /**
- * Load bytecode from a Base64 string.
+ * Decode bytecode from a Base64 string.
  *
  * @param b64 - Base64-encoded bytecode
  * @returns decoded bytecode
  */
-export function load(b64: string): Uint8Array;
+export function fromB64(b64: string): Uint8Array;
 
 /**
  * Serialise bytecode to Base64.
