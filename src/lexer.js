@@ -219,22 +219,10 @@ export function tokenize(src) {
             parts.push(parseInt(h1 + h2, 16))
             break
           }
-          case 'u': {
-            const hex = src.slice(pos, pos + 4)
-            if (hex.length < 4 || !isHexStr(hex)) err('invalid \\u escape')
-            pos += 4; col += 4
-            parts.push(String.fromCodePoint(parseInt(hex, 16)))
-            break
-          }
-          case 'U': {
-            const hex = src.slice(pos, pos + 8)
-            if (hex.length < 8 || !isHexStr(hex)) err('invalid \\U escape')
-            pos += 8; col += 8
-            const cp = parseInt(hex, 16)
-            if (cp > 0x10FFFF) err('code point out of range in \\U escape')
-            parts.push(String.fromCodePoint(cp))
-            break
-          }
+          case 'u':
+            err('\\u escape not allowed in bytes literal, use \\xHH or \\OOO instead')
+          case 'U':
+            err('\\U escape not allowed in bytes literal, use \\xHH or \\OOO instead')
           default: {
             if (isOctal(ch)) {
               let oct = ch
