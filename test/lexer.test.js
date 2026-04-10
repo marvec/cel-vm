@@ -328,6 +328,14 @@ describe('BYTES literals', () => {
     assert.equal(t.type, TT.BYTES)
     assert.deepEqual(t.value, new Uint8Array([65]))
   })
+
+  it('b"\\u0041" rejects \\u escape in bytes', () => {
+    assert.throws(() => tokenize('b"\\u0041"'), /\\u escape not allowed in bytes literal/)
+  })
+
+  it('b"\\U00000041" rejects \\U escape in bytes', () => {
+    assert.throws(() => tokenize('b"\\U00000041"'), /\\U escape not allowed in bytes literal/)
+  })
 })
 
 describe('keyword tokens', () => {
