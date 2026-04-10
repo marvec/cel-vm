@@ -1,7 +1,16 @@
 // Type definitions for cel-vm
 
 /** CEL value type names used for constant and variable declarations. */
-export type CelTypeName = 'int' | 'uint' | 'double' | 'string' | 'bool' | 'bytes' | 'null' | 'map' | 'list';
+export type CelTypeName =
+  | "int"
+  | "uint"
+  | "double"
+  | "string"
+  | "bool"
+  | "bytes"
+  | "null"
+  | "map"
+  | "list";
 
 /** Options for `compile()`. */
 export interface CompileOptions {
@@ -57,7 +66,11 @@ export function compile(src: string, options?: CompileOptions): Uint8Array;
  * @returns evaluation result
  * @throws {EvaluationError}
  */
-export function evaluate(bytecode: Uint8Array, activation?: Record<string, unknown>, customFunctionTable?: Function[]): unknown;
+export function evaluate(
+  bytecode: Uint8Array,
+  activation?: Record<string, unknown>,
+  customFunctionTable?: Function[],
+): unknown;
 
 /**
  * Decode bytecode from a Base64 string.
@@ -86,7 +99,7 @@ export function toBase64(bytecode: Uint8Array): string;
  */
 export function program(
   src: string,
-  options?: CompileOptions
+  options?: CompileOptions,
 ): (activation?: Record<string, unknown>) => unknown;
 
 /**
@@ -97,7 +110,11 @@ export function program(
  * @returns evaluation result
  * @throws {LexError | ParseError | CheckError | CompileError | EvaluationError}
  */
-export function run(src: string, activation?: Record<string, unknown>, options?: CompileOptions): unknown;
+export function run(
+  src: string,
+  activation?: Record<string, unknown>,
+  options?: CompileOptions,
+): unknown;
 
 /**
  * Declaration builder for CEL-VM environments.
@@ -130,7 +147,11 @@ export class Environment {
    * @param arity - number of arguments
    * @param impl - JavaScript implementation
    */
-  registerFunction(name: string, arity: number, impl: (...args: unknown[]) => unknown): this;
+  registerFunction(
+    name: string,
+    arity: number,
+    impl: (...args: unknown[]) => unknown,
+  ): this;
 
   /**
    * Register a custom method callable on a receiver value.
@@ -139,7 +160,11 @@ export class Environment {
    * @param arity - number of arguments excluding the receiver
    * @param impl - `(receiver, ...args) => result`
    */
-  registerMethod(name: string, arity: number, impl: (receiver: unknown, ...args: unknown[]) => unknown): this;
+  registerMethod(
+    name: string,
+    arity: number,
+    impl: (receiver: unknown, ...args: unknown[]) => unknown,
+  ): this;
 
   /**
    * Declare a variable. Calling this at least once enables strict mode:
@@ -157,7 +182,10 @@ export class Environment {
    * @param options - compilation options (debugInfo only)
    * @throws {LexError | ParseError | CheckError | CompileError}
    */
-  compile(src: string, options?: { debugInfo?: boolean; cache?: boolean }): Uint8Array;
+  compile(
+    src: string,
+    options?: { debugInfo?: boolean; cache?: boolean },
+  ): Uint8Array;
 
   /**
    * Evaluate bytecode compiled within this environment.
