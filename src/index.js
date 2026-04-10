@@ -1,9 +1,11 @@
 // CEL-VM public API
 //
-//   compile(src, options?)   → Uint8Array  (or throws LexError | ParseError | CheckError | CompileError)
-//   evaluate(bytecode, activation?)  → value  (or throws BytecodeError | EvaluationError)
-//   fromB64(b64)             → Uint8Array  (decode Base64 → bytecode; throws BytecodeError)
-//   run(src, activation?)    → value  (convenience: compile + evaluate, with caching)
+//   compile(src, options?)                        → Uint8Array  (or throws LexError | ParseError | CheckError | CompileError)
+//   evaluate(bytecode, activation?, fnTable?)     → value       (or throws BytecodeError | EvaluationError)
+//   program(src, options?)                        → (activation?) => value
+//   run(src, activation?, options?)               → value       (convenience: compile + evaluate, with caching)
+//   fromBase64(b64)                                → Uint8Array  (decode Base64 → bytecode; throws BytecodeError)
+//   toBase64(bytecode)                             → string      (encode bytecode → Base64)
 
 import { tokenize } from './lexer.js'
 import { parse }    from './parser.js'
@@ -33,6 +35,7 @@ const cache = new Map()
  * @param {object} [options]
  * @param {boolean} [options.debugInfo=false] - include line/col debug info
  * @param {boolean} [options.cache=true]      - use compilation cache
+ * @param {object}  [options.env]             - environment config from env.toConfig()
  * @returns {Uint8Array} encoded bytecode
  */
 export function compile(src, options = {}) {
@@ -56,8 +59,9 @@ export function compile(src, options = {}) {
 /**
  * Evaluate encoded bytecode (Uint8Array) against an activation map.
  *
- * @param {Uint8Array} bytecode   - output of compile()
- * @param {object}     [activation] - variable bindings { name: value }
+ * @param {Uint8Array} bytecode              - output of compile()
+ * @param {object}     [activation]          - variable bindings { name: value }
+ * @param {Function[]} [customFunctionTable] - @internal function table from env.toConfig().functionTable
  * @returns {*} result value
  */
 export function evaluate(bytecode, activation, customFunctionTable) {
@@ -65,25 +69,7 @@ export function evaluate(bytecode, activation, customFunctionTable) {
   return evalProgram(program, activation || {}, customFunctionTable)
 }
 
-/**
- * Decode bytecode from a Base64 string (for transport via JSON/DB/localStorage).
- *
- * @param {string} b64 - Base64-encoded bytecode
- * @returns {Uint8Array}
- */
-export function fromB64(b64) {
-  return fromBase64(b64)
-}
-
-/**
- * Serialise bytecode to Base64.
- *
- * @param {Uint8Array} bytecode
- * @returns {string} Base64 string
- */
-export function toB64(bytecode) {
-  return toBase64(bytecode)
-}
+export { fromBase64, toBase64 }
 
 /**
  * Compile a CEL expression and return a callable function.
@@ -104,6 +90,7 @@ export function program(src, options = {}) {
  *
  * @param {string} src         - CEL expression
  * @param {object} [activation] - variable bindings
+ * @param {object} [options]   - same options as compile()
  * @returns {*} result value
  */
 export function run(src, activation, options) {

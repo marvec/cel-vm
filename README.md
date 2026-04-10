@@ -29,7 +29,7 @@ npm install cel-vm
 
 ## API
 
-### `run(expr, activation?)` — evaluate in one call
+### `run(src, activation?, options?)` — evaluate in one call
 
 ```js
 import { run } from 'cel-vm'
@@ -41,7 +41,7 @@ run('name.startsWith("J")', { name: 'Jane' }) // → true
 
 `run()` compiles the expression, caches the bytecode, and evaluates it. On repeated calls with the same expression, compilation is skipped. See [DOCS.md](DOCS.md#runsrc-activation-options) for full parameter details.
 
-### `program(expr, options?)` — compile to a callable
+### `program(src, options?)` — compile to a callable
 
 ```js
 import { program } from 'cel-vm'
@@ -53,7 +53,7 @@ check({ x: -1n, y: 50n })  // → false
 
 Compiles once, returns a function. This is the recommended API for repeated evaluation — same performance as `compile()` + `evaluate()`, less boilerplate. See [DOCS.md](DOCS.md#programsrc-options) for full parameter details.
 
-### `compile(expr)` — compile to bytecode
+### `compile(src, options?)` — compile to bytecode
 
 ```js
 import { compile } from 'cel-vm'
@@ -62,7 +62,7 @@ const bytecode = compile('x > 0 && y < 100')
 // bytecode is a Uint8Array — the compiled program
 ```
 
-### `evaluate(bytecode, activation?)` — run bytecode
+### `evaluate(bytecode, activation?)` — run bytecode against an activation map
 
 ```js
 import { compile, evaluate } from 'cel-vm'
@@ -74,7 +74,7 @@ evaluate(bytecode, { x: 1n, y: 2n })   // → 3n
 
 This is the hot path. Pre-compile once, evaluate many times. Use `program()` for a more ergonomic wrapper around this pattern. See [DOCS.md](DOCS.md#compilesrc-options) for compile/evaluate parameter details.
 
-### `toBase64(bytecode)` / `fromB64(base64)` — serialise and deserialise
+### `toBase64(bytecode)` / `fromBase64(base64)` — serialise and deserialise
 
 ```js
 import { compile, evaluate, toBase64, fromBase64 } from 'cel-vm'
@@ -89,7 +89,7 @@ const loaded = fromBase64(b64)
 evaluate(loaded, { score: 95n })  // → true
 ```
 
-See [DOCS.md](DOCS.md#tobace64bytecode--frombase64) for full parameter details.
+See [DOCS.md](DOCS.md#tob64bytecode--fromb64base64) for full parameter details.
 
 ### Activation values
 

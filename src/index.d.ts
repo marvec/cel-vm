@@ -89,6 +89,20 @@ export function fromBase64(b64: string): Uint8Array;
 export function toBase64(bytecode: Uint8Array): string;
 
 /**
+ * Compile a CEL expression and return a callable function.
+ * The returned function accepts an activation object and evaluates the expression.
+ *
+ * @param src - CEL expression
+ * @param options - compilation options
+ * @returns callable that evaluates the compiled expression
+ * @throws {LexError | ParseError | CheckError | CompileError}
+ */
+export function program(
+  src: string,
+  options?: CompileOptions,
+): (activation?: Record<string, unknown>) => unknown;
+
+/**
  * Convenience: compile + evaluate in one call, with caching.
  *
  * @param src - CEL expression
