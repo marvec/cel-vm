@@ -46,7 +46,7 @@ src/checker.js   — type inference + CEL macro expansion
 src/compiler.js  — AST → bytecode; constant folding, short-circuit jumps
 src/bytecode.js  — binary encode/decode (DataView over ArrayBuffer), Base64 ser/deser
 src/vm.js        — plain while/switch dispatch loop (not a class, for V8 JIT)
-src/index.js     — public API: compile(src), evaluate(bytecode, activation), fromB64(b64)
+src/index.js     — public API: compile(src), evaluate(bytecode, activation), toBase64/fromBase64
 ```
 
 Tests live in `test/cel-spec/` (ported from google/cel-spec conformance suite) and `test/marcbachmann/` (ported from marcbachmann/cel-js). Use Node's built-in `node:test` — no external test framework.
