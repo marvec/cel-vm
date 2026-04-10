@@ -74,22 +74,22 @@ evaluate(bytecode, { x: 1n, y: 2n })   // → 3n
 
 This is the hot path. Pre-compile once, evaluate many times. Use `program()` for a more ergonomic wrapper around this pattern. See [DOCS.md](DOCS.md#compilesrc-options) for compile/evaluate parameter details.
 
-### `toB64(bytecode)` / `fromB64(base64)` — serialise and deserialise
+### `toBase64(bytecode)` / `fromB64(base64)` — serialise and deserialise
 
 ```js
-import { compile, evaluate, toB64, fromB64 } from 'cel-vm'
+import { compile, evaluate, toBase64, fromBase64 } from 'cel-vm'
 
 // Compile and serialise to Base64 for storage
 const bytecode = compile('score > 90')
-const b64 = toB64(bytecode)
+const b64 = toBase64(bytecode)
 // → "Q0UBAAABAgAAAA..." — store this in a database, config file, etc.
 
 // Later: deserialise from Base64 and evaluate (no re-compilation)
-const loaded = fromB64(b64)
+const loaded = fromBase64(b64)
 evaluate(loaded, { score: 95n })  // → true
 ```
 
-See [DOCS.md](DOCS.md#tob64bytecode--fromb64base64) for full parameter details.
+See [DOCS.md](DOCS.md#tobace64bytecode--frombase64) for full parameter details.
 
 ### Activation values
 

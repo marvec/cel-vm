@@ -69,15 +69,15 @@ run('age >= 18', { age: 25n })  // → true
 - `activation` — variable bindings `{ name: value }`
 - `options` — same as `compile()` options (`debugInfo`, `cache`, `env`). When `options.env` is provided, its `functionTable` is automatically passed to evaluate.
 
-### `toB64(bytecode)` / `fromB64(base64)`
+### `toBase64(bytecode)` / `fromBase64(base64)`
 
 Serialise bytecode to Base64 and deserialise it back.
 
 ```js
-import { compile, toB64, fromB64, evaluate } from 'cel-vm'
+import { compile, toBase64, fromBase64, evaluate } from 'cel-vm'
 
-const b64 = toB64(compile('x > 10'))
-const bytecode = fromB64(b64)
+const b64 = toBase64(compile('x > 10'))
+const bytecode = fromBase64(b64)
 evaluate(bytecode, { x: 42n })  // → true
 ```
 

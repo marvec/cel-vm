@@ -45,7 +45,7 @@
   "license": "GPL-3.0-only",
   "repository": {
     "type": "git",
-    "url": "https://github.com/mvecera/cel-vm"
+    "url": "https://github.com/marvec/cel-vm"
   },
   "devDependencies": {
     "cel-js": "^0.8.2"
