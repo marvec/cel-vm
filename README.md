@@ -261,7 +261,7 @@ bun run bench/compare.js
 | **Regex** | JS `RegExp` | RE2 | No native RE2 in JS; minor semantic differences possible |
 | **Timestamps** | Full support | Full support | Millisecond precision; nanosecond precision not yet implemented |
 | **Bytes literals** | `b"..."` → `Uint8Array` | Full support | `\u`/`\U` escapes in bytes produce raw `charCodeAt` instead of UTF-8 encoding |
-| **Bytes comparison** | Not supported | `<`, `>`, `<=`, `>=` | Bytes ordering operators not implemented |
+| **Bytes comparison** | `<`, `>`, `<=`, `>=` | `<`, `>`, `<=`, `>=` | Lexicographic byte-by-byte ordering |
 | **Type identifiers** | `type()` returns string | First-class type values | `bool`, `int`, etc. are not resolvable as identifiers |
 
 ## Architecture
