@@ -42,7 +42,7 @@
     "common-expression-language",
     "evaluator"
   ],
-  "license": "GPL-3.0-only",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/marvec/cel-vm"
