@@ -27,6 +27,19 @@ export { Environment } from './environment.js'
 // Compiled bytecode cache: source string → Uint8Array
 const cache = new Map()
 
+// Decoded program cache: Uint8Array reference → decoded program object
+// WeakMap so entries are GC'd when the Uint8Array key is collected
+const decodeCache = new WeakMap()
+
+function cachedDecode(bytecode) {
+  let program = decodeCache.get(bytecode)
+  if (!program) {
+    program = decode(bytecode)
+    decodeCache.set(bytecode, program)
+  }
+  return program
+}
+
 /**
  * Compile a CEL source string to bytecode (Uint8Array).
  * Results are cached by source string.
@@ -65,7 +78,7 @@ export function compile(src, options = {}) {
  * @returns {*} result value
  */
 export function evaluate(bytecode, activation, customFunctionTable) {
-  const program = decode(bytecode)
+  const program = cachedDecode(bytecode)
   return evalProgram(program, activation || {}, customFunctionTable)
 }
 
@@ -81,8 +94,9 @@ export { fromBase64, toBase64 }
  */
 export function program(src, options = {}) {
   const bytecode = compile(src, options)
+  const decoded = decode(bytecode)
   const functionTable = options.env ? options.env.functionTable : undefined
-  return (activation) => evaluate(bytecode, activation || {}, functionTable)
+  return (activation) => evalProgram(decoded, activation || {}, functionTable)
 }
 
 /**

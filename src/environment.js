@@ -17,6 +17,18 @@ import { compile as compileAst } from './compiler.js'
 import { encode, decode } from './bytecode.js'
 import { evaluate as evalProgram, evaluateDebug as evalProgramDebug } from './vm.js'
 
+// Decoded program cache: Uint8Array reference → decoded program object
+const decodeCache = new WeakMap()
+
+function cachedDecode(bytecode) {
+  let program = decodeCache.get(bytecode)
+  if (!program) {
+    program = decode(bytecode)
+    decodeCache.set(bytecode, program)
+  }
+  return program
+}
+
 // Const pool tags (must match bytecode.js / compiler.js)
 const TAG_NULL   = 0
 const TAG_BOOL   = 1
@@ -188,7 +200,7 @@ export class Environment {
    * @returns {*}
    */
   evaluate(bytecode, activation) {
-    const program = decode(bytecode)
+    const program = cachedDecode(bytecode)
     const config = this.toConfig()
     const evalFn = this._debug ? evalProgramDebug : evalProgram
     return evalFn(program, activation || {}, config.functionTable)
@@ -202,7 +214,10 @@ export class Environment {
    */
   program(src, options) {
     const bytecode = this.compile(src, options)
-    return (activation) => this.evaluate(bytecode, activation)
+    const decoded = decode(bytecode)
+    const config = this.toConfig()
+    const evalFn = this._debug ? evalProgramDebug : evalProgram
+    return (activation) => evalFn(decoded, activation || {}, config.functionTable)
   }
 
   /**

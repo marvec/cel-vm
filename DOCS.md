@@ -38,7 +38,7 @@ evaluate(bytecode, { x: 10n, y: 5n })  // → 15n
 
 ### `program(src, options?)`
 
-Compile a CEL expression and return a callable function. The returned function accepts an activation object and evaluates the expression. Compiles once at call time — subsequent invocations of the returned function only run the VM.
+Compile a CEL expression and return a callable function. The returned function accepts an activation object and evaluates the expression. Compiles and decodes once at call time — subsequent invocations of the returned function run the VM directly with no decode overhead. **This is the recommended API for repeated evaluation** (e.g. evaluating the same expression in a loop against different activations).
 
 ```js
 import { program } from 'cel-vm'
@@ -213,7 +213,7 @@ const result = env.evaluate(bytecode, { user: { age: 25n } })
 
 ### `env.program(src, options?)`
 
-Compile a CEL expression within this environment and return a callable function.
+Compile a CEL expression within this environment and return a callable function. Decodes the bytecode once at call time — subsequent invocations run the VM directly with no decode overhead. **Recommended for repeated evaluation.**
 
 ```js
 const check = env.program('user.age >= minAge')
