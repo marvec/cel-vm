@@ -252,6 +252,12 @@ The VM is a **plain function** (not a class) containing a single `while (pc < le
 
 The cache in `src/index.js` is a `Map<string, Uint8Array>` keyed on the source expression. The first call to `compile(src)` pays the full lexer + parser + checker + compiler cost. All subsequent calls return the cached `Uint8Array`. `evaluate()` decodes and runs the bytecode directly.
 
+### Decode caching
+
+The binary `decode()` step (Adler-32 checksum, header parsing, constant pool and instruction reconstruction) is expensive relative to VM dispatch. A module-level `WeakMap<Uint8Array, DecodedProgram>` in both `src/index.js` and `src/environment.js` ensures that the same `Uint8Array` reference is decoded at most once. Since `compile()` already caches `Uint8Array` instances by source string, repeated `evaluate()` calls on the same compiled bytecode hit the WeakMap on identity check. When the `Uint8Array` is garbage-collected, the cached decoded program is collected too — no memory leak.
+
+The `program()` and `env.program()` callable APIs go further: they decode once at creation time and close over the decoded program object, calling the VM's `evaluate()` function directly. This completely eliminates decode from the hot path for the recommended repeated-evaluation API.
+
 ### Pre-resolved variable indices
 
 A tree-walker looks up `activation['fieldName']` (a string hash lookup) every time it encounters an identifier. CEL-VM resolves names to integer indices at compile time. At runtime the access is `vars[2]` — a direct array slot read.
