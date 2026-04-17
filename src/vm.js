@@ -1062,6 +1062,28 @@ function parseDuration(s) {
 }
 
 // ---------------------------------------------------------------------------
+// Pooled stack buffers — reused across evaluations to avoid per-call alloc
+// ---------------------------------------------------------------------------
+// `new Array(256)` + `new Uint8Array(256)` on every call is a meaningful
+// fraction of short-expression evaluation cost. Keep one set at module scope
+// and check out on entry, return on exit. A custom function can synchronously
+// call evaluate() again from OP.CALL (see callCustom) — that nested call
+// takes a fresh allocation via the `fromPool === false` path so the outer
+// call's buffers stay intact.
+
+const STACK_INITIAL_CAPACITY = 64
+const STACK_MIN_CAPACITY = 16
+const STACK_MAX_CAPACITY = 256
+
+let pooledStack = (() => {
+  const a = new Array(STACK_INITIAL_CAPACITY)
+  for (let i = 0; i < STACK_INITIAL_CAPACITY; i++) a[i] = undefined
+  return a
+})()
+let pooledUintFlags = new Uint8Array(STACK_INITIAL_CAPACITY)
+let pooledInUse = false
+
+// ---------------------------------------------------------------------------
 // Main evaluate() function — V8-optimised dispatch loop
 // ---------------------------------------------------------------------------
 
@@ -1076,7 +1098,57 @@ const IDX_ACCU      = 0xFFFF
  * @returns {*} the result value
  */
 export function evaluate(program, activation, customFunctionTable) {
+  // Check out pooled buffers unless we're re-entrant. Each instruction pushes
+  // at most one slot, so opcodes.length upper-bounds max sp. Grow the pool
+  // once at entry if needed — the hot loop stays free of bounds checks. The
+  // dispatch itself lives in evaluateDispatch() to keep this function's
+  // try/finally from pessimising the hot loop.
+  const fromPool = !pooledInUse
+  const len = program.opcodes.length
+  const requiredCapacity = len > STACK_MAX_CAPACITY
+    ? STACK_MAX_CAPACITY
+    : (len < STACK_MIN_CAPACITY ? STACK_MIN_CAPACITY : len)
+  let stack, uintFlags
+
+  if (fromPool) {
+    pooledInUse = true
+    if (pooledStack.length < requiredCapacity) {
+      let newCap = pooledStack.length
+      while (newCap < requiredCapacity) newCap *= 2
+      if (newCap > STACK_MAX_CAPACITY) newCap = STACK_MAX_CAPACITY
+      const grown = new Array(newCap)
+      for (let i = 0; i < newCap; i++) grown[i] = undefined
+      pooledStack = grown
+      pooledUintFlags = new Uint8Array(newCap)
+    } else {
+      // LOAD_VAR and other opcodes push without setting uintFlags[sp]; they
+      // rely on the slot being 0. Reset so stale 1s from a prior evaluation
+      // don't corrupt uint arithmetic semantics on later slots.
+      pooledUintFlags.fill(0)
+    }
+    stack = pooledStack
+    uintFlags = pooledUintFlags
+  } else {
+    stack = new Array(requiredCapacity)
+    for (let i = 0; i < requiredCapacity; i++) stack[i] = undefined
+    uintFlags = new Uint8Array(requiredCapacity)
+  }
+
+  try {
+    return evaluateDispatch(program, activation, customFunctionTable, stack, uintFlags)
+  } finally {
+    if (fromPool) {
+      // Clear slot references so evaluate-scoped intermediates are eligible
+      // for GC — otherwise pooled slots would pin them until overwritten.
+      for (let i = 0; i < stack.length; i++) stack[i] = undefined
+      pooledInUse = false
+    }
+  }
+}
+
+function evaluateDispatch(program, activation, customFunctionTable, stack, uintFlags) {
   const { consts, varTable, opcodes, operands } = program
+  const len = opcodes.length
 
   // Build activation array (string → index resolved at compile time)
   const vars = new Array(varTable.length)
@@ -1084,14 +1156,10 @@ export function evaluate(program, activation, customFunctionTable) {
     vars[i] = activation != null ? activation[varTable[i]] : undefined
   }
 
-  // Stack
-  const stack = new Array(256)
-  const uintFlags = new Uint8Array(256)  // 1 = slot holds a uint value
   let sp = -1
 
   // Program counter
   let pc = 0
-  const len = opcodes.length
 
   // Accumulator and iterator element registers (for comprehensions)
   let accu = null
