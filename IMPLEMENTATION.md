@@ -34,7 +34,8 @@ Source String
  ┌──────────┐
  │ Compiler │   constant folding, variable indexing, jump patching
  └──────────┘
-     │  program { consts, varTable, instrs }
+     │  program { consts, varTable, instrs }  (compiler output)
+     │  program { consts, varTable, opcodes, operands }  (decoded)
      ▼
  ┌───────────┐
  │ Bytecode  │   binary encode/decode, Base64 transport
@@ -124,13 +125,25 @@ After the checker, the AST contains no macro nodes — only primitives the compi
 The compiler converts the checked AST to a program structure:
 
 ```js
+// Compiler output (fed to encode()):
 {
   consts:   [{ tag, value }, ...],   // constant pool
   varTable: ['age', 'name', ...],    // external variable names, sorted
-  instrs:   [{ op, operands }, ...], // instruction stream
+  instrs:   [{ op, operands }, ...], // instruction stream (plain objects)
+  debugInfo: [...]                   // optional line/col per instruction
+}
+
+// Decoded program (output of decode(), fed to VM):
+{
+  consts:   [{ tag, value }, ...],   // constant pool (same)
+  varTable: ['age', 'name', ...],    // external variable names (same)
+  opcodes:  Uint8Array,              // flat opcode array
+  operands: Int32Array,              // flat operand array (1 slot per instruction)
   debugInfo: [...]                   // optional line/col per instruction
 }
 ```
+
+The compiler internally uses `{op, operands}` objects for ergonomic emit/patch, but `decode()` produces parallel typed arrays. CALL's two operands (builtinId u16 + argc u8) are bit-packed into a single Int32: `(builtinId << 16) | argc`.
 
 **Variable pre-resolution.** Before compiling, the compiler walks the entire AST and collects all external variable names (excluding comprehension-bound names). It sorts them alphabetically and assigns each an integer index. At compile time every `LOAD_VAR` instruction carries that index. At runtime, variable access is `vars[i]` — a single array lookup with no string comparison.
 
@@ -270,9 +283,13 @@ Literal subexpressions are evaluated at compile time. The runtime never sees the
 
 `a && b` where `a` is `false` never evaluates `b` — the VM jumps past it. This is not just an optimisation; it is required for correctness (`false && error` must return `false`, not an error).
 
+### Flat typed-array instruction representation
+
+The decoded program stores instructions as two parallel typed arrays — `opcodes: Uint8Array` and `operands: Int32Array` — instead of an array of `{op, operands}` objects. The VM dispatch loop reads `opcodes[pc]` and `operands[pc]` — two indexed typed-array reads with no object allocation, no property lookup, and monomorphic access patterns that V8 inlines aggressively. This also eliminates GC pressure from per-instruction object allocation during decode.
+
 ### Cache-friendly linear instruction stream
 
-AST nodes are heap-allocated objects scattered in memory. The instruction array is a compact, sequentially-accessed structure. Modern CPUs prefetch it efficiently.
+AST nodes are heap-allocated objects scattered in memory. The typed-array instruction representation is a compact, sequentially-accessed structure. Modern CPUs prefetch it efficiently.
 
 ### V8 JIT friendliness
 
