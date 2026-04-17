@@ -99,7 +99,7 @@ describe('BytecodeError — decode error paths', () => {
     const decoded = decode(bytes)
     assert.equal(decoded.consts.length, 4)
     assert.equal(decoded.varTable.length, 2)
-    assert.equal(decoded.instrs.length, 2)
+    assert.equal(decoded.opcodes.length, 2)
   })
 })
 

@@ -1076,7 +1076,7 @@ const IDX_ACCU      = 0xFFFF
  * @returns {*} the result value
  */
 export function evaluate(program, activation, customFunctionTable) {
-  const { consts, varTable, instrs } = program
+  const { consts, varTable, opcodes, operands } = program
 
   // Build activation array (string → index resolved at compile time)
   const vars = new Array(varTable.length)
@@ -1091,26 +1091,28 @@ export function evaluate(program, activation, customFunctionTable) {
 
   // Program counter
   let pc = 0
-  const len = instrs.length
+  const len = opcodes.length
 
   // Accumulator and iterator element registers (for comprehensions)
   let accu = null
   let iterElem = undefined
 
   while (pc < len) {
-    const { op, operands } = instrs[pc++]
+    const op = opcodes[pc]
+    const operand = operands[pc]
+    pc++
 
     switch (op) {
       // ── Push / Load ───────────────────────────────────────────────────────
       case OP.PUSH_CONST: {
-        const entry = consts[operands[0]]
+        const entry = consts[operand]
         stack[++sp] = entry.value
         uintFlags[sp] = entry.tag === TAG_UINT64 ? 1 : 0
         break
       }
 
       case OP.LOAD_VAR: {
-        const idx = operands[0]
+        const idx = operand
         if (idx === IDX_ITER_ELEM) {
           // Load from iterElem register (set by ITER_NEXT)
           stack[++sp] = iterElem
@@ -1135,21 +1137,21 @@ export function evaluate(program, activation, customFunctionTable) {
 
       // ── Jumps ─────────────────────────────────────────────────────────────
       case OP.JUMP: {
-        pc += operands[0]
+        pc += operand
         break
       }
 
       case OP.JUMP_IF_FALSE: {
         const cond = stack[sp--]
         // Errors and non-bool: don't jump (fall through to evaluate other branch)
-        if (cond === false) pc += operands[0]
+        if (cond === false) pc += operand
         else if (!isBool(cond) && !isError(cond)) throw new EvaluationError(`JUMP_IF_FALSE requires bool, got ${celTypeName(cond)}`, pc - 1)
         break
       }
 
       case OP.JUMP_IF_TRUE: {
         const cond = stack[sp--]
-        if (cond === true) pc += operands[0]
+        if (cond === true) pc += operand
         else if (!isBool(cond) && !isError(cond)) throw new EvaluationError(`JUMP_IF_TRUE requires bool, got ${celTypeName(cond)}`, pc - 1)
         break
       }
@@ -1158,7 +1160,7 @@ export function evaluate(program, activation, customFunctionTable) {
         // Peek (keep on stack)
         const cond = stack[sp]
         // false → jump (short-circuit); error/non-bool → fall through (evaluate right)
-        if (cond === false) pc += operands[0]
+        if (cond === false) pc += operand
         else if (!isBool(cond) && !isError(cond)) stack[sp] = celError(`no such overload`)
         break
       }
@@ -1167,7 +1169,7 @@ export function evaluate(program, activation, customFunctionTable) {
         // Peek (keep on stack)
         const cond = stack[sp]
         // true → jump (short-circuit); error/non-bool → fall through (evaluate right)
-        if (cond === true) pc += operands[0]
+        if (cond === true) pc += operand
         else if (!isBool(cond) && !isError(cond)) stack[sp] = celError(`no such overload`)
         break
       }
@@ -1286,7 +1288,7 @@ export function evaluate(program, activation, customFunctionTable) {
 
       // ── Collections ───────────────────────────────────────────────────────
       case OP.BUILD_LIST: {
-        const n = operands[0]
+        const n = operand
         const list = new Array(n)
         for (let i = n - 1; i >= 0; i--) list[i] = stack[sp--]
         // Filter optional elements: unwrap optional.of(v), skip optional.none()
@@ -1309,7 +1311,7 @@ export function evaluate(program, activation, customFunctionTable) {
         break
       }
       case OP.BUILD_MAP: {
-        const n = operands[0]
+        const n = operand
         const map = new Map()
         // Stack has k0,v0,k1,v1,...,kn-1,vn-1 (pushed in order, bottom to top)
         const base = sp - n * 2 + 1
@@ -1353,13 +1355,13 @@ export function evaluate(program, activation, customFunctionTable) {
 
       // ── Field access ──────────────────────────────────────────────────────
       case OP.SELECT: {
-        const nameIdx = operands[0]
+        const nameIdx = operand
         const field = consts[nameIdx].value
         stack[sp] = celSelect(stack[sp], field)
         break
       }
       case OP.HAS_FIELD: {
-        const nameIdx = operands[0]
+        const nameIdx = operand
         const field = consts[nameIdx].value
         stack[sp] = celHasField(stack[sp], field)
         break
@@ -1367,8 +1369,8 @@ export function evaluate(program, activation, customFunctionTable) {
 
       // ── Function call ─────────────────────────────────────────────────────
       case OP.CALL: {
-        const builtinId = operands[0]
-        const argc = operands[1]
+        const builtinId = operand >>> 16
+        const argc = operand & 0xFFFF
         const result = builtinId >= 128
           ? callCustom(builtinId, argc, stack, sp, customFunctionTable)
           : callBuiltin(builtinId, argc, stack, sp)
@@ -1395,7 +1397,7 @@ export function evaluate(program, activation, customFunctionTable) {
       }
 
       case OP.ITER_NEXT: {
-        const offset = operands[0]
+        const offset = operand
         const iter = stack[sp]
         if (iter.idx >= iter.items.length) {
           pc += offset
@@ -1412,7 +1414,7 @@ export function evaluate(program, activation, customFunctionTable) {
       }
 
       case OP.ACCUM_PUSH: {
-        const constIdx = operands[0]
+        const constIdx = operand
         if (constIdx === 0xFFFF) {
           // Pop TOS and use as initial accumulator
           accu = stack[sp--]
@@ -1452,7 +1454,7 @@ export function evaluate(program, activation, customFunctionTable) {
         break
       }
       case OP.OPT_SELECT: {
-        const nameIdx = operands[0]
+        const nameIdx = operand
         const field = consts[nameIdx].value
         const obj = stack[sp]
         if (isOpt(obj) && obj.value === undefined) {
@@ -1472,7 +1474,7 @@ export function evaluate(program, activation, customFunctionTable) {
         break
       }
       case OP.OPT_CHAIN: {
-        const offset = operands[0]
+        const offset = operand
         const top = stack[sp]
         if (isOpt(top) && top.value === undefined) {
           pc += offset

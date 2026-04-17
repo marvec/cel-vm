@@ -333,7 +333,7 @@ export function encode(program) {
  * Decode a Uint8Array back to a program object.
  *
  * @param {Uint8Array} bytes
- * @returns {{ consts: Array, varTable: string[], instrs: Array, debugInfo: Array|null }}
+ * @returns {{ consts: Array, varTable: string[], opcodes: Uint8Array, operands: Int32Array, debugInfo: Array|null }}
  */
 export function decode(bytes) {
   // Verify checksum
@@ -419,23 +419,22 @@ export function decode(bytes) {
     varTable.push(decoder.decode(raw));
   }
 
-  // --- Instructions ---
+  // --- Instructions (flat typed arrays for monomorphic VM dispatch) ---
   const instrCount = readU32();
-  const instrs = [];
+  const opcodes = new Uint8Array(instrCount);
+  const instrOperands = new Int32Array(instrCount);
   for (let i = 0; i < instrCount; i++) {
     const op = readU8();
+    opcodes[i] = op;
     const width = OPERAND_WIDTH[op] ?? 0;
-    let operands;
-    if (width === 0) {
-      operands = [];
-    } else if (width === 2) {
-      operands = [SIGNED_OPERAND[op] ? readI16() : readU16()];
+    if (width === 2) {
+      instrOperands[i] = SIGNED_OPERAND[op] ? readI16() : readU16();
     } else if (width === 3) {
-      operands = [readU16(), readU8()];
-    } else {
+      // CALL: bit-pack builtinId (u16) and argc (u8) into one i32
+      instrOperands[i] = (readU16() << 16) | readU8();
+    } else if (width !== 0) {
       throw new BytecodeError(`Unknown operand width ${width} for opcode ${op}`);
     }
-    instrs.push({ op, operands });
   }
 
   // --- Debug info ---
@@ -450,7 +449,7 @@ export function decode(bytes) {
     }
   }
 
-  return { consts, varTable, instrs, debugInfo };
+  return { consts, varTable, opcodes, operands: instrOperands, debugInfo };
 }
 
 // ---------------------------------------------------------------------------
