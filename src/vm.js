@@ -79,9 +79,6 @@ function checkUintOverflow(v) {
   return v
 }
 
-// TAG constant for uint64 (must match bytecode.js TAG_UINT64)
-const TAG_UINT64 = 3
-
 // ---------------------------------------------------------------------------
 // Timestamp/Duration range constants
 // ---------------------------------------------------------------------------
@@ -1093,7 +1090,7 @@ const IDX_ACCU      = 0xFFFF
 /**
  * Evaluate encoded bytecode against an activation object.
  *
- * @param {object} program   - decoded program: { consts, varTable, instrs }
+ * @param {object} program   - decoded program: { consts, constUintFlags, varTable, opcodes, operands }
  * @param {object} activation - map of variable name → value
  * @returns {*} the result value
  */
@@ -1147,7 +1144,7 @@ export function evaluate(program, activation, customFunctionTable) {
 }
 
 function evaluateDispatch(program, activation, customFunctionTable, stack, uintFlags) {
-  const { consts, varTable, opcodes, operands } = program
+  const { consts, constUintFlags, varTable, opcodes, operands } = program
   const len = opcodes.length
 
   // Build activation array (string → index resolved at compile time)
@@ -1173,9 +1170,8 @@ function evaluateDispatch(program, activation, customFunctionTable, stack, uintF
     switch (op) {
       // ── Push / Load ───────────────────────────────────────────────────────
       case OP.PUSH_CONST: {
-        const entry = consts[operand]
-        stack[++sp] = entry.value
-        uintFlags[sp] = entry.tag === TAG_UINT64 ? 1 : 0
+        stack[++sp] = consts[operand]
+        uintFlags[sp] = constUintFlags[operand]
         break
       }
 
@@ -1423,15 +1419,11 @@ function evaluateDispatch(program, activation, customFunctionTable, stack, uintF
 
       // ── Field access ──────────────────────────────────────────────────────
       case OP.SELECT: {
-        const nameIdx = operand
-        const field = consts[nameIdx].value
-        stack[sp] = celSelect(stack[sp], field)
+        stack[sp] = celSelect(stack[sp], consts[operand])
         break
       }
       case OP.HAS_FIELD: {
-        const nameIdx = operand
-        const field = consts[nameIdx].value
-        stack[sp] = celHasField(stack[sp], field)
+        stack[sp] = celHasField(stack[sp], consts[operand])
         break
       }
 
@@ -1487,7 +1479,7 @@ function evaluateDispatch(program, activation, customFunctionTable, stack, uintF
           // Pop TOS and use as initial accumulator
           accu = stack[sp--]
         } else {
-          accu = consts[constIdx].value
+          accu = consts[constIdx]
           // For mutable values (list/map), we need a fresh copy
           if (isList(accu)) accu = [...accu]
           else if (isMap(accu)) accu = new Map(accu)
@@ -1522,8 +1514,7 @@ function evaluateDispatch(program, activation, customFunctionTable, stack, uintF
         break
       }
       case OP.OPT_SELECT: {
-        const nameIdx = operand
-        const field = consts[nameIdx].value
+        const field = consts[operand]
         const obj = stack[sp]
         if (isOpt(obj) && obj.value === undefined) {
           // none stays none

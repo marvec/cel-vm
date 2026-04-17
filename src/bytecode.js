@@ -333,7 +333,7 @@ export function encode(program) {
  * Decode a Uint8Array back to a program object.
  *
  * @param {Uint8Array} bytes
- * @returns {{ consts: Array, varTable: string[], opcodes: Uint8Array, operands: Int32Array, debugInfo: Array|null }}
+ * @returns {{ consts: Array, constUintFlags: Uint8Array, varTable: string[], opcodes: Uint8Array, operands: Int32Array, debugInfo: Array|null }}
  */
 export function decode(bytes) {
   // Verify checksum
@@ -371,38 +371,40 @@ export function decode(bytes) {
   const flags = readU8();
   const hasDebug = (flags & FLAG_DEBUG) !== 0;
 
-  // --- Const pool ---
+  // --- Const pool (tagless: raw values + parallel uint-flag Uint8Array) ---
   const constCount = readU16();
-  const consts = [];
+  const consts = new Array(constCount);
+  const constUintFlags = new Uint8Array(constCount);
   const decoder = new TextDecoder();
   for (let i = 0; i < constCount; i++) {
     const tag = readU8();
     switch (tag) {
       case TAG_NULL:
-        consts.push({ tag, value: null });
+        consts[i] = null;
         break;
       case TAG_BOOL:
-        consts.push({ tag, value: readU8() !== 0 });
+        consts[i] = readU8() !== 0;
         break;
       case TAG_INT64:
-        consts.push({ tag, value: readBigInt64() });
+        consts[i] = readBigInt64();
         break;
       case TAG_UINT64:
-        consts.push({ tag, value: readBigUint64() });
+        consts[i] = readBigUint64();
+        constUintFlags[i] = 1;
         break;
       case TAG_DOUBLE:
-        consts.push({ tag, value: readF64() });
+        consts[i] = readF64();
         break;
       case TAG_STRING: {
         const len = readU32();
         const raw = readBytes(len);
-        consts.push({ tag, value: decoder.decode(raw) });
+        consts[i] = decoder.decode(raw);
         break;
       }
       case TAG_BYTES: {
         const len = readU32();
         const raw = readBytes(len);
-        consts.push({ tag, value: new Uint8Array(raw) });
+        consts[i] = new Uint8Array(raw);
         break;
       }
       default:
@@ -449,7 +451,7 @@ export function decode(bytes) {
     }
   }
 
-  return { consts, varTable, opcodes, operands: instrOperands, debugInfo };
+  return { consts, constUintFlags, varTable, opcodes, operands: instrOperands, debugInfo };
 }
 
 // ---------------------------------------------------------------------------
