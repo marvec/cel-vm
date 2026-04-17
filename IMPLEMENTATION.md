@@ -135,15 +135,18 @@ The compiler converts the checked AST to a program structure:
 
 // Decoded program (output of decode(), fed to VM):
 {
-  consts:   [{ tag, value }, ...],   // constant pool (same)
-  varTable: ['age', 'name', ...],    // external variable names (same)
-  opcodes:  Uint8Array,              // flat opcode array
-  operands: Int32Array,              // flat operand array (1 slot per instruction)
-  debugInfo: [...]                   // optional line/col per instruction
+  consts:         [value, value, ...], // constant pool (tagless: raw values)
+  constUintFlags: Uint8Array,          // 1 = slot i holds a uint64 value, 0 otherwise
+  varTable:       ['age', 'name', ...],// external variable names (same)
+  opcodes:        Uint8Array,          // flat opcode array
+  operands:       Int32Array,          // flat operand array (1 slot per instruction)
+  debugInfo:      [...]                // optional line/col per instruction
 }
 ```
 
 The compiler internally uses `{op, operands}` objects for ergonomic emit/patch, but `decode()` produces parallel typed arrays. CALL's two operands (builtinId u16 + argc u8) are bit-packed into a single Int32: `(builtinId << 16) | argc`.
+
+**Tagless const pool.** The wire format still carries a type-tag byte per constant, but `decode()` drops the `{tag, value}` wrapper and produces a raw values array. The only piece of runtime type information the VM needs is *is this a uint64?* — that bit is lifted into a parallel `Uint8Array`. `PUSH_CONST` becomes two indexed reads (`stack[++sp] = consts[operand]; uintFlags[sp] = constUintFlags[operand]`) with no property access, no tag compare, no branch. Field-name reads (`SELECT`, `HAS_FIELD`, `OPT_SELECT`) and the const-init arm of `ACCUM_PUSH` read directly from the tagless array. The binary format is unchanged.
 
 **Variable pre-resolution.** Before compiling, the compiler walks the entire AST and collects all external variable names (excluding comprehension-bound names). It sorts them alphabetically and assigns each an integer index. At compile time every `LOAD_VAR` instruction carries that index. At runtime, variable access is `vars[i]` — a single array lookup with no string comparison.
 
