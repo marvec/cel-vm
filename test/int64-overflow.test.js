@@ -6,6 +6,10 @@ describe('int64 overflow detection', () => {
     it('INT64_MAX + 1 overflows', () => assertCelError('9223372036854775807 + 1'))
     it('INT64_MAX + INT64_MAX overflows', () => assertCelError('9223372036854775807 + 9223372036854775807'))
     it('just under max is fine', () => assertCel('9223372036854775806 + 1', 9223372036854775807n))
+    // Same overflow through specialized ADD_INT path (folded sub-expression feeds
+    // typed intermediate into outer ADD_INT instead of generic ADD).
+    it('INT64_MAX + (1 + 0) overflows via ADD_INT', () =>
+      assertCelError('9223372036854775807 + (1 + 0)'))
   })
 
   describe('subtraction overflow', () => {

@@ -78,6 +78,11 @@ console.log('All timings are for the EVALUATION phase only (bytecode pre-compile
 const cases = [
   { name: 'arithmetic: 1 + 2 * 3',           expr: '1 + 2 * 3',            vars: {} },
   { name: 'arithmetic: (x + y) * z',          expr: '(x + y) * z',          vars: { x: 10n, y: 5n, z: 3n } },
+  // Typed-arith microbench — exercise ADD_INT and ADD_DOUBLE on non-foldable
+  // expressions. Inner Binary folds, outer Binary emits a typed opcode.
+  { name: 'typed ADD_INT: MAX + (1 + 0)',     expr: '9223372036854775806 + (1 + 0)', vars: {} },
+  { name: 'typed ADD_DOUBLE: 1.5 + 2.5 * 3.0', expr: '1.5 + 2.5 * 3.0',      vars: {} },
+  { name: 'typed MUL_DOUBLE: (1.5+2.5)*(3+4)', expr: '(1.5 + 2.5) * (3.0 + 4.0)', vars: {} },
   { name: 'comparison: x > 100 && y < 50',    expr: 'x > 100 && y < 50',    vars: { x: 200n, y: 30n } },
   { name: 'string: s.contains("world")',       expr: 's.contains("world")',   vars: { s: 'hello world' } },
   { name: 'ternary: x > 0 ? "pos" : "neg"',   expr: 'x > 0 ? "pos" : "neg"', vars: { x: 5n } },
