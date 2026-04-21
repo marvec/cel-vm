@@ -6,7 +6,7 @@
 
 High-performance [Common Expression Language](https://github.com/google/cel-spec) (CEL) evaluator in JavaScript using a bytecode VM. No runtime dependencies.
 
-**~24× faster** than [marcbachmann/cel-js](https://github.com/marcbachmann/cel-js) on repeated evaluation (12–47× depending on expression complexity).
+**~307× faster** than [marcbachmann/cel-js](https://github.com/marcbachmann/cel-js) on repeated evaluation (43–907× depending on expression complexity).
 
 ## Why
 
@@ -223,23 +223,25 @@ Double-quoted, single-quoted, triple-quoted (multiline), raw strings (`r"..."`),
 
 ## Benchmarks
 
-Measured on Apple M1 Pro, Bun 1.3.11, 100K iterations per case. All cel-vm timings are for bytecode evaluation only (pre-compiled).
+Measured on Apple M1 Pro, Bun 1.3.11, 1,000,000 iterations × 5 runs (median reported). All cel-vm timings are for bytecode evaluation only (pre-compiled).
 
 | Expression | cel-vm | cel-js | Speedup |
 |------------|--------|--------|---------|
-| `1 + 2 * 3` | 1,861K ops/s | 96K ops/s | **19×** |
-| `(x + y) * z` | 1,600K ops/s | 52K ops/s | **31×** |
-| `x > 100 && y < 50` | 1,335K ops/s | 56K ops/s | **24×** |
-| `x > 0 ? "pos" : "neg"` | 1,266K ops/s | 50K ops/s | **25×** |
-| `[1, 2, 3, 4, 5]` | 1,443K ops/s | 31K ops/s | **47×** |
-| `list[2]` | 1,694K ops/s | 74K ops/s | **23×** |
-| `m.x` | 1,738K ops/s | 123K ops/s | **14×** |
-| `l.exists(v, v > 3)` | 598K ops/s | 37K ops/s | **16×** |
-| `l.filter(v, v % 2 == 0)` | 395K ops/s | 33K ops/s | **12×** |
-| `l.map(v, v * 2)` | 735K ops/s | 38K ops/s | **19×** |
-| `x > 0 && y > 0 && x + y < 100` | 1,116K ops/s | 34K ops/s | **33×** |
+| `1 + 2 * 3` | 25,392K ops/s | 91K ops/s | **279×** |
+| `(x + y) * z` | 13,944K ops/s | 50K ops/s | **279×** |
+| `x > 100 && y < 50` | 19,697K ops/s | 53K ops/s | **370×** |
+| `s.contains("world")` | 30,815K ops/s | — | — |
+| `x > 0 ? "pos" : "neg"` | 27,866K ops/s | 48K ops/s | **583×** |
+| `[1, 2, 3, 4, 5]` | 25,998K ops/s | 29K ops/s | **907×** |
+| `list[2]` | 28,529K ops/s | 71K ops/s | **400×** |
+| `m.x` | 27,573K ops/s | 119K ops/s | **232×** |
+| `l.exists(v, v > 3)` | 3,228K ops/s | 36K ops/s | **90×** |
+| `l.filter(v, v % 2 == 0)` | 1,882K ops/s | 32K ops/s | **59×** |
+| `l.map(v, v * 2)` | 1,585K ops/s | 37K ops/s | **43×** |
+| nested `&&` + comparison | 8,061K ops/s | 32K ops/s | **254×** |
+| `5u + 3u` | 22,294K ops/s | 114K ops/s | **195×** |
 
-**Average: 24× faster.** Pre-compiled bytecode is an additional 5.6× faster than compile-and-evaluate.
+**Average: 307× faster** (min 43×, max 907×). Pre-compiled bytecode is an additional **39× faster** than compile-and-evaluate when the bytecode is cached.
 
 ```bash
 # Run the benchmark yourself

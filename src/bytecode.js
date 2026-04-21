@@ -333,7 +333,7 @@ export function encode(program) {
  * Decode a Uint8Array back to a program object.
  *
  * @param {Uint8Array} bytes
- * @returns {{ consts: Array, constUintFlags: Uint8Array, varTable: string[], opcodes: Uint8Array, operands: Int32Array, debugInfo: Array|null }}
+ * @returns {{ consts: Array, constUintFlags: Uint8Array, hasUintConsts: boolean, varTable: string[], opcodes: Uint8Array, operands: Int32Array, debugInfo: Array|null }}
  */
 export function decode(bytes) {
   // Verify checksum
@@ -375,6 +375,7 @@ export function decode(bytes) {
   const constCount = readU16();
   const consts = new Array(constCount);
   const constUintFlags = new Uint8Array(constCount);
+  let hasUintConsts = false;
   const decoder = new TextDecoder();
   for (let i = 0; i < constCount; i++) {
     const tag = readU8();
@@ -391,6 +392,7 @@ export function decode(bytes) {
       case TAG_UINT64:
         consts[i] = readBigUint64();
         constUintFlags[i] = 1;
+        hasUintConsts = true;
         break;
       case TAG_DOUBLE:
         consts[i] = readF64();
@@ -451,7 +453,7 @@ export function decode(bytes) {
     }
   }
 
-  return { consts, constUintFlags, varTable, opcodes, operands: instrOperands, debugInfo };
+  return { consts, constUintFlags, hasUintConsts, varTable, opcodes, operands: instrOperands, debugInfo };
 }
 
 // ---------------------------------------------------------------------------
