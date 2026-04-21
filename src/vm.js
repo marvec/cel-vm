@@ -1079,12 +1079,32 @@ let pooledStack = (() => {
 })()
 let pooledUintFlags = new Uint8Array(STACK_INITIAL_CAPACITY)
 let pooledInUse = false
-// Dirty-tracking: pooledUintFlags only needs zeroing if a prior call actually
-// wrote a `1` into it. Cleared on entry (after fill), set by PUSH_CONST when
-// pushing a uint const and by arithmetic when both operands are uint.
-// Re-entrant calls (fresh buffer) may false-positive this flag; that only
-// costs one unnecessary fill() and is rare in practice.
-let pooledUintFlagsDirty = false
+
+// Pooled activation vars array. Grows monotonically to the largest varTable
+// seen; re-entrant calls take a fresh alloc so the outer call's slots stay
+// intact. Gated by the same `pooledInUse` flag as the stack pool — they
+// check out and return together.
+//
+// A separate sentinel for 0-var programs was tried and regressed list-heavy
+// benchmarks ~20%: its PACKED_SMI_ELEMENTS kind differs from pooledVars'
+// HOLEY kind, which polymorphises the dispatch function's `vars` parameter
+// shape across calls. Using pooledVars even for 0-var programs keeps the
+// parameter shape stable. LOAD_VAR is never emitted for 0-var programs,
+// so no read of `vars` actually fires.
+const VARS_INITIAL_CAPACITY = 8
+
+let pooledVars = (() => {
+  const a = new Array(VARS_INITIAL_CAPACITY)
+  for (let i = 0; i < VARS_INITIAL_CAPACITY; i++) a[i] = undefined
+  return a
+})()
+
+// Watermark carrier: dispatch writes its max sp here so evaluate()'s finally
+// knows how many slots to clear. Reused across non-re-entrant calls; re-entrant
+// calls allocate their own so each frame has private state.
+const _hwCarrier = new Int32Array(1)
+// Last call's watermark — bounds the pooledUintFlags reset on the next entry.
+let _lastHw = -1
 
 // ---------------------------------------------------------------------------
 // Main evaluate() function — V8-optimised dispatch loop
@@ -1119,8 +1139,11 @@ export function evaluate(program, activation, customFunctionTable) {
   const requiredCapacity = len > STACK_MAX_CAPACITY
     ? STACK_MAX_CAPACITY
     : (len < STACK_MIN_CAPACITY ? STACK_MIN_CAPACITY : len)
-  let stack
+  const varTable = program.varTable
+  const n = varTable.length
+  let stack, uintFlags, vars
 
+  let hwOut
   if (fromPool) {
     pooledInUse = true
     if (pooledStack.length < requiredCapacity) {
@@ -1133,45 +1156,79 @@ export function evaluate(program, activation, customFunctionTable) {
       // Both buffers must resize together: a later slow-path call at depth
       // N requires uintFlags.length >= N, even if this call is the fast path.
       pooledUintFlags = new Uint8Array(newCap)
-      pooledUintFlagsDirty = false
-    } else if (!useFastPath && pooledUintFlagsDirty) {
-      // LOAD_VAR and friends push without setting uintFlags[sp]; they rely
-      // on the slot being 0. Reset only if a prior slow-path call wrote a 1.
+      _lastHw = -1
+    } else if (!useFastPath && _lastHw >= 0) {
+      // LOAD_VAR and other opcodes push without setting uintFlags[sp]; they
+      // rely on the slot being 0. Reset only the range touched by the prior
+      // call — slots above _lastHw are still 0 by induction (only PUSH_CONST
+      // writes a non-zero flag, and it only writes at the live sp).
       // Fast-path calls never read uintFlags, so we can skip this entirely.
-      pooledUintFlags.fill(0)
-      pooledUintFlagsDirty = false
+      if (_lastHw < 4) {
+        for (let i = 0; i <= _lastHw; i++) pooledUintFlags[i] = 0
+      } else {
+        pooledUintFlags.fill(0, 0, _lastHw + 1)
+      }
     }
     stack = pooledStack
+    uintFlags = pooledUintFlags
+
+    if (pooledVars.length < n) {
+      let newCap = pooledVars.length
+      while (newCap < n) newCap *= 2
+      const grown = new Array(newCap)
+      for (let i = 0; i < newCap; i++) grown[i] = undefined
+      pooledVars = grown
+    }
+    vars = pooledVars
+    // Skip fill when activation is null — the prior call's finally cleared
+    // slots [0..prior-n) to undefined, and any slots beyond that stay
+    // undefined from init. LOAD_VAR correctly reads undefined either way.
+    if (n > 0 && activation != null) {
+      for (let i = 0; i < n; i++) vars[i] = activation[varTable[i]]
+    }
+    hwOut = _hwCarrier
   } else {
     stack = new Array(requiredCapacity)
     for (let i = 0; i < requiredCapacity; i++) stack[i] = undefined
+    uintFlags = new Uint8Array(requiredCapacity)
+
+    // Re-entrant path: fresh vars array. Pre-fill with undefined so the
+    // element kind matches pooledVars (HOLEY) — avoids polymorphising the
+    // dispatch function's `vars` parameter shape.
+    vars = new Array(n > 0 ? n : VARS_INITIAL_CAPACITY)
+    if (n > 0 && activation != null) {
+      for (let i = 0; i < n; i++) vars[i] = activation[varTable[i]]
+    } else {
+      for (let i = 0; i < vars.length; i++) vars[i] = undefined
+    }
+    // Re-entrant calls get their own carrier — negligible (24 B) and keeps
+    // frames independent of the module-level pool state.
+    hwOut = new Int32Array(1)
   }
+  hwOut[0] = -1
 
   try {
     if (useFastPath) {
-      return evaluateDispatchNoUint(program, activation, customFunctionTable, stack)
+      return evaluateDispatchNoUint(program, customFunctionTable, stack, vars, hwOut)
     }
-    const uintFlags = fromPool ? pooledUintFlags : new Uint8Array(requiredCapacity)
-    return evaluateDispatch(program, activation, customFunctionTable, stack, uintFlags)
+    return evaluateDispatch(program, customFunctionTable, stack, uintFlags, vars, hwOut)
   } finally {
     if (fromPool) {
-      // Clear slot references so evaluate-scoped intermediates are eligible
-      // for GC — otherwise pooled slots would pin them until overwritten.
-      for (let i = 0; i < stack.length; i++) stack[i] = undefined
+      // Clear only the slots dispatch actually touched so evaluate-scoped
+      // intermediates are eligible for GC. Slots above hw were never written
+      // by this call, so the pool invariant "slots > hw are undefined" holds.
+      const hw = hwOut[0]
+      for (let i = 0; i <= hw; i++) stack[i] = undefined
+      for (let i = 0; i < n; i++) vars[i] = undefined
+      _lastHw = hw
       pooledInUse = false
     }
   }
 }
 
-function evaluateDispatch(program, activation, customFunctionTable, stack, uintFlags) {
-  const { consts, constUintFlags, varTable, opcodes, operands } = program
+function evaluateDispatch(program, customFunctionTable, stack, uintFlags, vars, hwOut) {
+  const { consts, constUintFlags, opcodes, operands } = program
   const len = opcodes.length
-
-  // Build activation array (string → index resolved at compile time)
-  const vars = new Array(varTable.length)
-  for (let i = 0; i < varTable.length; i++) {
-    vars[i] = activation != null ? activation[varTable[i]] : undefined
-  }
 
   let sp = -1
 
@@ -1182,7 +1239,14 @@ function evaluateDispatch(program, activation, customFunctionTable, stack, uintF
   let accu = null
   let iterElem = undefined
 
+  // Watermark tracks the highest sp seen this call. Updated once at the loop
+  // header so we cannot miss an sp-modification site; kept as a local so JSC
+  // can register-promote it (module-level `let` would spill to the environment
+  // record on every touch).
+  let maxSp = -1
+
   while (pc < len) {
+    if (sp > maxSp) maxSp = sp
     const op = opcodes[pc]
     const operand = operands[pc]
     pc++
@@ -1191,9 +1255,7 @@ function evaluateDispatch(program, activation, customFunctionTable, stack, uintF
       // ── Push / Load ───────────────────────────────────────────────────────
       case OP.PUSH_CONST: {
         stack[++sp] = consts[operand]
-        const flag = constUintFlags[operand]
-        uintFlags[sp] = flag
-        if (flag) pooledUintFlagsDirty = true
+        uintFlags[sp] = constUintFlags[operand]
         break
       }
 
@@ -1217,6 +1279,10 @@ function evaluateDispatch(program, activation, customFunctionTable, stack, uintF
 
       case OP.RETURN: {
         const result = stack[sp]
+        // Sync watermark before returning — RETURN leaves via return, not
+        // the loop header, so the final sp update would otherwise be missed.
+        if (sp > maxSp) maxSp = sp
+        hwOut[0] = maxSp
         if (isError(result)) throw new EvaluationError(result.message, result._instrIndex >= 0 ? result._instrIndex : pc - 1)
         return result
       }
@@ -1270,7 +1336,7 @@ function evaluateDispatch(program, activation, customFunctionTable, stack, uintF
         } else {
           stack[sp] = celAdd(a, b)
         }
-        if (bothUint) { uintFlags[sp] = 1; pooledUintFlagsDirty = true }
+        if (bothUint) uintFlags[sp] = 1
         else uintFlags[sp] = 0
         break
       }
@@ -1283,7 +1349,7 @@ function evaluateDispatch(program, activation, customFunctionTable, stack, uintF
         } else {
           stack[sp] = celSub(a, b)
         }
-        if (bothUint) { uintFlags[sp] = 1; pooledUintFlagsDirty = true }
+        if (bothUint) uintFlags[sp] = 1
         else uintFlags[sp] = 0
         break
       }
@@ -1296,7 +1362,7 @@ function evaluateDispatch(program, activation, customFunctionTable, stack, uintF
         } else {
           stack[sp] = celMul(a, b)
         }
-        if (bothUint) { uintFlags[sp] = 1; pooledUintFlagsDirty = true }
+        if (bothUint) uintFlags[sp] = 1
         else uintFlags[sp] = 0
         break
       }
@@ -1305,7 +1371,7 @@ function evaluateDispatch(program, activation, customFunctionTable, stack, uintF
         const b = stack[sp--]; const aIsUint = uintFlags[sp]; const a = stack[sp]
         stack[sp] = celDiv(a, b)
         const bothUint = aIsUint && bIsUint
-        if (bothUint) { uintFlags[sp] = 1; pooledUintFlagsDirty = true }
+        if (bothUint) uintFlags[sp] = 1
         else uintFlags[sp] = 0
         break
       }
@@ -1314,7 +1380,7 @@ function evaluateDispatch(program, activation, customFunctionTable, stack, uintF
         const b = stack[sp--]; const aIsUint = uintFlags[sp]; const a = stack[sp]
         stack[sp] = celMod(a, b)
         const bothUint = aIsUint && bIsUint
-        if (bothUint) { uintFlags[sp] = 1; pooledUintFlagsDirty = true }
+        if (bothUint) uintFlags[sp] = 1
         else uintFlags[sp] = 0
         break
       }
@@ -1656,6 +1722,8 @@ function evaluateDispatch(program, activation, customFunctionTable, stack, uintF
 
   // Should not reach here if bytecode ends with RETURN
   const result = stack[sp]
+  if (sp > maxSp) maxSp = sp
+  hwOut[0] = maxSp
   if (isError(result)) throw new EvaluationError(result.message, result._instrIndex >= 0 ? result._instrIndex : pc - 1)
   return result
 }
@@ -1667,21 +1735,18 @@ function evaluateDispatch(program, activation, customFunctionTable, stack, uintF
 // opcode ever sets uintFlags[sp] = 1 from something other than a uint const,
 // extend hasUintConsts detection in decode() to cover it — or route all
 // traffic through evaluateDispatch.
-function evaluateDispatchNoUint(program, activation, customFunctionTable, stack) {
-  const { consts, varTable, opcodes, operands } = program
+function evaluateDispatchNoUint(program, customFunctionTable, stack, vars, hwOut) {
+  const { consts, opcodes, operands } = program
   const len = opcodes.length
-
-  const vars = new Array(varTable.length)
-  for (let i = 0; i < varTable.length; i++) {
-    vars[i] = activation != null ? activation[varTable[i]] : undefined
-  }
 
   let sp = -1
   let pc = 0
   let accu = null
   let iterElem = undefined
+  let maxSp = -1
 
   while (pc < len) {
+    if (sp > maxSp) maxSp = sp
     const op = opcodes[pc]
     const operand = operands[pc]
     pc++
@@ -1712,6 +1777,8 @@ function evaluateDispatchNoUint(program, activation, customFunctionTable, stack)
 
       case OP.RETURN: {
         const result = stack[sp]
+        if (sp > maxSp) maxSp = sp
+        hwOut[0] = maxSp
         if (isError(result)) throw new EvaluationError(result.message, result._instrIndex >= 0 ? result._instrIndex : pc - 1)
         return result
       }
@@ -2099,6 +2166,8 @@ function evaluateDispatchNoUint(program, activation, customFunctionTable, stack)
   }
 
   const result = stack[sp]
+  if (sp > maxSp) maxSp = sp
+  hwOut[0] = maxSp
   if (isError(result)) throw new EvaluationError(result.message, result._instrIndex >= 0 ? result._instrIndex : pc - 1)
   return result
 }
