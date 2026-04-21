@@ -7,6 +7,12 @@
 // The benchmark measures hot-path evaluation (repeated evaluation of
 // pre-compiled bytecode) since that's the core value proposition of
 // the bytecode VM approach over tree-walking interpreters.
+//
+// Methodology (upgraded 2026-04-21 per perf plan):
+//   - process.hrtime.bigint() for nanosecond-precision timing
+//   - 1,000,000 iterations per run for cel-vm (resolves ~9 ns deltas above noise)
+//   - 5 independent runs per case; report median ops/s and IQR
+//   - cel-js comparison kept at 100k iterations (interpreter is much slower)
 
 import { compile, evaluate } from '../src/index.js'
 
@@ -14,17 +20,50 @@ import { compile, evaluate } from '../src/index.js'
 // Benchmark infrastructure
 // ---------------------------------------------------------------------------
 
-function bench(name, fn, iterations = 100_000) {
-  // Warm up V8 JIT
-  for (let i = 0; i < 1000; i++) fn()
+const RUNS = 5
+const CEL_VM_ITERS = 1_000_000
+const CEL_JS_ITERS = 100_000
+const WARMUP_ITERS = 1_000
 
-  const start = performance.now()
+function runOnce(fn, iterations) {
+  const start = process.hrtime.bigint()
   for (let i = 0; i < iterations; i++) fn()
-  const elapsed = performance.now() - start
+  const elapsedNs = Number(process.hrtime.bigint() - start)
+  return iterations / (elapsedNs / 1e9) // ops/sec
+}
 
-  const opsPerSec = Math.round(iterations / (elapsed / 1000))
-  console.log(`  ${name.padEnd(50)} ${(opsPerSec / 1000).toFixed(0).padStart(8)} K ops/s  (${elapsed.toFixed(1)}ms)`)
-  return opsPerSec
+function median(sorted) {
+  const n = sorted.length
+  return n % 2 ? sorted[(n - 1) >> 1] : (sorted[n / 2 - 1] + sorted[n / 2]) / 2
+}
+
+function quartile(sorted, q) {
+  const pos = (sorted.length - 1) * q
+  const lo = Math.floor(pos)
+  const hi = Math.ceil(pos)
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo)
+}
+
+function bench(name, fn, iterations = CEL_VM_ITERS, runs = RUNS) {
+  // Warm up V8 JIT
+  for (let i = 0; i < WARMUP_ITERS; i++) fn()
+
+  const samples = []
+  for (let r = 0; r < runs; r++) samples.push(runOnce(fn, iterations))
+  samples.sort((a, b) => a - b)
+
+  const med = median(samples)
+  const q1 = quartile(samples, 0.25)
+  const q3 = quartile(samples, 0.75)
+  const iqr = q3 - q1
+  const nsPerOp = 1e9 / med
+  const nsIqr = (1e9 / q1) - (1e9 / q3) // ns IQR (q1 ops/s ↔ slowest)
+
+  console.log(
+    `  ${name.padEnd(50)} ${(med / 1000).toFixed(0).padStart(8)} K ops/s` +
+    `  (${nsPerOp.toFixed(2)} ns/op, IQR ±${(nsIqr / 2).toFixed(2)})`
+  )
+  return { median: med, iqr, nsPerOp, samples }
 }
 
 // ---------------------------------------------------------------------------
@@ -32,6 +71,8 @@ function bench(name, fn, iterations = 100_000) {
 // ---------------------------------------------------------------------------
 
 console.log('\n=== cel-vm benchmark ===\n')
+console.log(`Iterations: ${CEL_VM_ITERS.toLocaleString()} × ${RUNS} runs (median + IQR reported)`)
+console.log('Timer: process.hrtime.bigint()')
 console.log('All timings are for the EVALUATION phase only (bytecode pre-compiled).\n')
 
 const cases = [
@@ -47,14 +88,14 @@ const cases = [
   { name: 'filter macro: l.filter(v,v%2==0)', expr: 'l.filter(v, v % 2 == 0)', vars: { l: [1n, 2n, 3n, 4n, 5n] } },
   { name: 'map macro: l.map(v, v*2)',         expr: 'l.map(v, v * 2)',        vars: { l: [1n, 2n, 3n, 4n, 5n] } },
   { name: 'complex: nested && + comparison',  expr: 'x > 0 && y > 0 && x + y < 100', vars: { x: 10n, y: 20n } },
+  { name: 'uint arithmetic: 5u + 3u',         expr: '5u + 3u',               vars: {} },
 ]
 
 console.log('CEL-VM (bytecode evaluate):')
 const celVmResults = {}
 for (const { name, expr, vars } of cases) {
   const bytecode = compile(expr)  // pre-compile once
-  const opsPerSec = bench(name, () => evaluate(bytecode, vars))
-  celVmResults[name] = opsPerSec
+  celVmResults[name] = bench(name, () => evaluate(bytecode, vars))
 }
 
 // ---------------------------------------------------------------------------
@@ -91,8 +132,8 @@ if (celJsAvailable) {
     try {
       // Verify the expression works with cel-js
       celJsEvaluate(expr, jsVars)
-      const opsPerSec = bench(name, () => celJsEvaluate(expr, jsVars), 100_000)
-      const ratio = celVmResults[name] / opsPerSec
+      const result = bench(name, () => celJsEvaluate(expr, jsVars), CEL_JS_ITERS, 3)
+      const ratio = celVmResults[name].median / result.median
       ratios.push(ratio)
       console.log(`    → cel-vm is ${ratio.toFixed(1)}× faster`)
     } catch {
@@ -124,7 +165,7 @@ const evalOnly = bench('Evaluate only (bytecode pre-compiled)', () => evaluate(p
 const compileEval = bench('Compile + Evaluate (cache miss)', () => {
   const b = compile(cacheExpr, { cache: false })
   return evaluate(b, cacheVars)
-})
+}, 100_000)
 
-console.log(`\n  Cache benefit: ${(evalOnly / compileEval).toFixed(1)}× faster when bytecode is cached`)
+console.log(`\n  Cache benefit: ${(evalOnly.median / compileEval.median).toFixed(1)}× faster when bytecode is cached`)
 console.log()
