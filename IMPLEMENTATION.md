@@ -305,6 +305,12 @@ AST nodes are heap-allocated objects scattered in memory. The typed-array instru
 
 Every `evaluate()` call used to `fill(0)` the pooled `uintFlags` buffer at entry so stale `1` bits from prior evaluations could not corrupt uint arithmetic semantics. Since the only writers of a `1` are `PUSH_CONST` (reading from a uint entry in `constUintFlags`) and arithmetic propagation (`aIsUint && bIsUint`), programs that do no uint arithmetic never produce a `1` — so the `fill(0)` is pure waste for them. A module-level `pooledUintFlagsDirty` flag is set when either writer emits a `1`; `evaluate()` skips the `fill(0)` when the flag is clear. Saves ~7–9 ns per call on short programs.
 
+### Two dispatch variants: uint-aware and uint-free
+
+`decode()` OR-reduces `constUintFlags` into a program-level `hasUintConsts: boolean`. `evaluate()` routes programs with no uint literals to `evaluateDispatchNoUint()`, a stripped copy of `evaluateDispatch()` that omits the `uintFlags` parameter, the `PUSH_CONST` flag copy, the `aIsUint && bIsUint` check on `ADD`/`SUB`/`MUL`/`DIV`/`MOD`, the `checkUintOverflow` overflow arm, and the uint guard on `NEG`. The two functions share the same opcodes, builtins, and dispatch shape; V8 JITs each one separately. Removing the uintFlags reads/writes from the hot path of uint-free programs saves another ~2–5 ns beyond the lazy-reset optimisation. It also concentrates uint traffic on a single specialised dispatch, which measurably improves that path as well (~16 ns faster on `5u + 3u` at the time of introduction — V8 monomorphises the restricted call-site better).
+
+The invariant enforced by `hasUintConsts` is precise: the only source of a `1` in `uintFlags` is `PUSH_CONST` reading `constUintFlags[i] === 1`. Any future opcode that introduces a new source of `1` must either be covered by the decode-time detection or route through `evaluateDispatch` unconditionally.
+
 ---
 
 ## Public API (`src/index.js`)
