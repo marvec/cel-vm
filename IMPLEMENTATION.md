@@ -299,7 +299,7 @@ AST nodes are heap-allocated objects scattered in memory. The typed-array instru
 - Plain function, not a class → monomorphic `this` avoidance
 - Single `switch` with integer cases → V8 can build a jump table
 - No `try/catch` inside the dispatch loop
-- Stack pre-allocated to 256 slots → no reallocation in the common case
+- Stack, `uintFlags`, and activation `vars` are pooled at module scope — `evaluate()` checks them out on entry and returns them on exit, so the hot path never allocates. Re-entrant calls (custom function calls back into `evaluate()`) take a fresh allocation so the outer call's buffers stay intact. Short expressions that previously paid `new Array()` for stack, uintFlags, and vars now pay none.
 
 ---
 
