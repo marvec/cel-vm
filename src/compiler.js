@@ -292,6 +292,27 @@ export function compile(ast, options = {}) {
   // and accuVar references use IDX_ACCU.
   const compScopeStack = []
 
+  // Numeric result-type cache for specialized arithmetic opcode emission.
+  // Keyed by Binary AST node; populated after emission (or constant folding)
+  // so parent Binary nodes can chain type inference through nested
+  // expressions (e.g. `1 + 2 * 3` — inner '*' folds to an int constant and
+  // the outer '+' still sees the sub-expression as 'int').
+  // TODO: migrate to checker when type-inference pass lands
+  const resultKind = new Map()
+
+  function inferNumericType(node) {
+    if (node.type === 'IntLit')   return 'int'
+    if (node.type === 'UintLit')  return 'uint'
+    if (node.type === 'FloatLit') return 'double'
+    if (node.type === 'Binary')   return resultKind.get(node) || null
+    if (node.type === 'Unary' && node.op === '-') {
+      const inner = inferNumericType(node.operand)
+      // Uint negation is an error at runtime, so don't claim a typed result.
+      return inner === 'int' || inner === 'double' ? inner : null
+    }
+    return null  // Ident/Call/etc. — conservative fallback to generic opcode
+  }
+
   function lookupCompVar(name) {
     for (let i = compScopeStack.length - 1; i >= 0; i--) {
       const scope = compScopeStack[i]
@@ -546,12 +567,29 @@ export function compile(ast, options = {}) {
     const folded = tryFoldBinary(op, left, right)
     if (folded !== null) {
       emitFoldedConst(folded)
+      // Record result kind so parent Binary can propagate typed-opcode emission
+      // across folded sub-expressions (e.g. `1 + 2 * 3` where the inner mul folds).
+      if (folded.tag === TAG_INT64)       resultKind.set(node, 'int')
+      else if (folded.tag === TAG_UINT64) resultKind.set(node, 'uint')
+      else if (folded.tag === TAG_DOUBLE) resultKind.set(node, 'double')
       return
     }
 
-    // General binary: compile both operands then emit opcode
+    // General binary: compile both operands then emit opcode.
+    // When both operand numeric types are statically known, emit a typed
+    // opcode that inlines the single relevant arithmetic branch in the VM,
+    // eliminating the typeof-chain in celAdd/celMul.
     compileNode(left)
     compileNode(right)
+
+    const lk = inferNumericType(left)
+    const rk = inferNumericType(right)
+    if (lk !== null && lk === rk) {
+      if (op === '+' && lk === 'double') { emit(OP.ADD_DOUBLE); resultKind.set(node, 'double'); return }
+      if (op === '*' && lk === 'double') { emit(OP.MUL_DOUBLE); resultKind.set(node, 'double'); return }
+      if (op === '+' && lk === 'int')    { emit(OP.ADD_INT);    resultKind.set(node, 'int');    return }
+    }
+
     emitBinaryOp(op)
   }
 
