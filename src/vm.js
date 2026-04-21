@@ -1399,6 +1399,35 @@ function evaluateDispatch(program, customFunctionTable, stack, uintFlags, vars, 
         break
       }
 
+      // ── Typed arithmetic (compile-time specialization) ────────────────────
+      // Emitted by the compiler when both operand numeric types are statically
+      // known. Skips the typeof-chain dispatch in celAdd/celMul. Error
+      // propagation still requires isError checks at the top of each case.
+      case OP.ADD_DOUBLE: {
+        const b = stack[sp--]; const a = stack[sp]
+        if (isError(a)) { uintFlags[sp] = 0; break }
+        if (isError(b)) { stack[sp] = b; uintFlags[sp] = 0; break }
+        stack[sp] = a + b
+        uintFlags[sp] = 0
+        break
+      }
+      case OP.MUL_DOUBLE: {
+        const b = stack[sp--]; const a = stack[sp]
+        if (isError(a)) { uintFlags[sp] = 0; break }
+        if (isError(b)) { stack[sp] = b; uintFlags[sp] = 0; break }
+        stack[sp] = a * b
+        uintFlags[sp] = 0
+        break
+      }
+      case OP.ADD_INT: {
+        const b = stack[sp--]; const a = stack[sp]
+        if (isError(a)) { uintFlags[sp] = 0; break }
+        if (isError(b)) { stack[sp] = b; uintFlags[sp] = 0; break }
+        stack[sp] = checkIntOverflow(a + b)
+        uintFlags[sp] = 0
+        break
+      }
+
       // ── Comparison ────────────────────────────────────────────────────────
       case OP.EQ: {
         const b = stack[sp--]; const a = stack[sp]
@@ -1850,6 +1879,29 @@ function evaluateDispatchNoUint(program, customFunctionTable, stack, vars, hwOut
       }
       case OP.NEG: {
         stack[sp] = celNeg(stack[sp])
+        break
+      }
+
+      // ── Typed arithmetic (compile-time specialization) ────────────────────
+      case OP.ADD_DOUBLE: {
+        const b = stack[sp--]; const a = stack[sp]
+        if (isError(a)) { break }
+        if (isError(b)) { stack[sp] = b; break }
+        stack[sp] = a + b
+        break
+      }
+      case OP.MUL_DOUBLE: {
+        const b = stack[sp--]; const a = stack[sp]
+        if (isError(a)) { break }
+        if (isError(b)) { stack[sp] = b; break }
+        stack[sp] = a * b
+        break
+      }
+      case OP.ADD_INT: {
+        const b = stack[sp--]; const a = stack[sp]
+        if (isError(a)) { break }
+        if (isError(b)) { stack[sp] = b; break }
+        stack[sp] = checkIntOverflow(a + b)
         break
       }
 
