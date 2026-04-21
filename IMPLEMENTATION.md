@@ -301,6 +301,10 @@ AST nodes are heap-allocated objects scattered in memory. The typed-array instru
 - No `try/catch` inside the dispatch loop
 - Stack pre-allocated to 256 slots → no reallocation in the common case
 
+### Lazy uintFlags reset
+
+Every `evaluate()` call used to `fill(0)` the pooled `uintFlags` buffer at entry so stale `1` bits from prior evaluations could not corrupt uint arithmetic semantics. Since the only writers of a `1` are `PUSH_CONST` (reading from a uint entry in `constUintFlags`) and arithmetic propagation (`aIsUint && bIsUint`), programs that do no uint arithmetic never produce a `1` — so the `fill(0)` is pure waste for them. A module-level `pooledUintFlagsDirty` flag is set when either writer emits a `1`; `evaluate()` skips the `fill(0)` when the flag is clear. Saves ~7–9 ns per call on short programs.
+
 ---
 
 ## Public API (`src/index.js`)

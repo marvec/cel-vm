@@ -1079,6 +1079,12 @@ let pooledStack = (() => {
 })()
 let pooledUintFlags = new Uint8Array(STACK_INITIAL_CAPACITY)
 let pooledInUse = false
+// Dirty-tracking: pooledUintFlags only needs zeroing if a prior call actually
+// wrote a `1` into it. Cleared on entry (after fill), set by PUSH_CONST when
+// pushing a uint const and by arithmetic when both operands are uint.
+// Re-entrant calls (fresh buffer) may false-positive this flag; that only
+// costs one unnecessary fill() and is rare in practice.
+let pooledUintFlagsDirty = false
 
 // ---------------------------------------------------------------------------
 // Main evaluate() function — V8-optimised dispatch loop
@@ -1117,11 +1123,14 @@ export function evaluate(program, activation, customFunctionTable) {
       for (let i = 0; i < newCap; i++) grown[i] = undefined
       pooledStack = grown
       pooledUintFlags = new Uint8Array(newCap)
-    } else {
+      pooledUintFlagsDirty = false
+    } else if (pooledUintFlagsDirty) {
       // LOAD_VAR and other opcodes push without setting uintFlags[sp]; they
-      // rely on the slot being 0. Reset so stale 1s from a prior evaluation
-      // don't corrupt uint arithmetic semantics on later slots.
+      // rely on the slot being 0. Reset only if a prior call wrote a 1 —
+      // programs with no uint arithmetic keep the buffer clean and skip this
+      // memset entirely.
       pooledUintFlags.fill(0)
+      pooledUintFlagsDirty = false
     }
     stack = pooledStack
     uintFlags = pooledUintFlags
@@ -1171,7 +1180,9 @@ function evaluateDispatch(program, activation, customFunctionTable, stack, uintF
       // ── Push / Load ───────────────────────────────────────────────────────
       case OP.PUSH_CONST: {
         stack[++sp] = consts[operand]
-        uintFlags[sp] = constUintFlags[operand]
+        const flag = constUintFlags[operand]
+        uintFlags[sp] = flag
+        if (flag) pooledUintFlagsDirty = true
         break
       }
 
@@ -1242,48 +1253,58 @@ function evaluateDispatch(program, activation, customFunctionTable, stack, uintF
       case OP.ADD: {
         const bIsUint = uintFlags[sp]
         const b = stack[sp--]; const aIsUint = uintFlags[sp]; const a = stack[sp]
-        if (aIsUint && bIsUint && isInt(a) && isInt(b)) {
+        const bothUint = aIsUint && bIsUint
+        if (bothUint && isInt(a) && isInt(b)) {
           stack[sp] = checkUintOverflow(a + b)
         } else {
           stack[sp] = celAdd(a, b)
         }
-        uintFlags[sp] = aIsUint && bIsUint ? 1 : 0
+        if (bothUint) { uintFlags[sp] = 1; pooledUintFlagsDirty = true }
+        else uintFlags[sp] = 0
         break
       }
       case OP.SUB: {
         const bIsUint = uintFlags[sp]
         const b = stack[sp--]; const aIsUint = uintFlags[sp]; const a = stack[sp]
-        if (aIsUint && bIsUint && isInt(a) && isInt(b)) {
+        const bothUint = aIsUint && bIsUint
+        if (bothUint && isInt(a) && isInt(b)) {
           stack[sp] = checkUintOverflow(a - b)
         } else {
           stack[sp] = celSub(a, b)
         }
-        uintFlags[sp] = aIsUint && bIsUint ? 1 : 0
+        if (bothUint) { uintFlags[sp] = 1; pooledUintFlagsDirty = true }
+        else uintFlags[sp] = 0
         break
       }
       case OP.MUL: {
         const bIsUint = uintFlags[sp]
         const b = stack[sp--]; const aIsUint = uintFlags[sp]; const a = stack[sp]
-        if (aIsUint && bIsUint && isInt(a) && isInt(b)) {
+        const bothUint = aIsUint && bIsUint
+        if (bothUint && isInt(a) && isInt(b)) {
           stack[sp] = checkUintOverflow(a * b)
         } else {
           stack[sp] = celMul(a, b)
         }
-        uintFlags[sp] = aIsUint && bIsUint ? 1 : 0
+        if (bothUint) { uintFlags[sp] = 1; pooledUintFlagsDirty = true }
+        else uintFlags[sp] = 0
         break
       }
       case OP.DIV: {
         const bIsUint = uintFlags[sp]
         const b = stack[sp--]; const aIsUint = uintFlags[sp]; const a = stack[sp]
         stack[sp] = celDiv(a, b)
-        uintFlags[sp] = aIsUint && bIsUint ? 1 : 0
+        const bothUint = aIsUint && bIsUint
+        if (bothUint) { uintFlags[sp] = 1; pooledUintFlagsDirty = true }
+        else uintFlags[sp] = 0
         break
       }
       case OP.MOD: {
         const bIsUint = uintFlags[sp]
         const b = stack[sp--]; const aIsUint = uintFlags[sp]; const a = stack[sp]
         stack[sp] = celMod(a, b)
-        uintFlags[sp] = aIsUint && bIsUint ? 1 : 0
+        const bothUint = aIsUint && bIsUint
+        if (bothUint) { uintFlags[sp] = 1; pooledUintFlagsDirty = true }
+        else uintFlags[sp] = 0
         break
       }
       case OP.POW: {
