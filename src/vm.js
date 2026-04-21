@@ -1099,6 +1099,13 @@ let pooledVars = (() => {
   return a
 })()
 
+// Watermark carrier: dispatch writes its max sp here so evaluate()'s finally
+// knows how many slots to clear. Reused across non-re-entrant calls; re-entrant
+// calls allocate their own so each frame has private state.
+const _hwCarrier = new Int32Array(1)
+// Last call's watermark — bounds the pooledUintFlags reset on the next entry.
+let _lastHw = -1
+
 // ---------------------------------------------------------------------------
 // Main evaluate() function — V8-optimised dispatch loop
 // ---------------------------------------------------------------------------
@@ -1128,6 +1135,7 @@ export function evaluate(program, activation, customFunctionTable) {
   const n = varTable.length
   let stack, uintFlags, vars
 
+  let hwOut
   if (fromPool) {
     pooledInUse = true
     if (pooledStack.length < requiredCapacity) {
@@ -1138,11 +1146,17 @@ export function evaluate(program, activation, customFunctionTable) {
       for (let i = 0; i < newCap; i++) grown[i] = undefined
       pooledStack = grown
       pooledUintFlags = new Uint8Array(newCap)
-    } else {
+      _lastHw = -1
+    } else if (_lastHw >= 0) {
       // LOAD_VAR and other opcodes push without setting uintFlags[sp]; they
-      // rely on the slot being 0. Reset so stale 1s from a prior evaluation
-      // don't corrupt uint arithmetic semantics on later slots.
-      pooledUintFlags.fill(0)
+      // rely on the slot being 0. Reset only the range touched by the prior
+      // call — slots above _lastHw are still 0 by induction (only PUSH_CONST
+      // writes a non-zero flag, and it only writes at the live sp).
+      if (_lastHw < 4) {
+        for (let i = 0; i <= _lastHw; i++) pooledUintFlags[i] = 0
+      } else {
+        pooledUintFlags.fill(0, 0, _lastHw + 1)
+      }
     }
     stack = pooledStack
     uintFlags = pooledUintFlags
@@ -1161,6 +1175,7 @@ export function evaluate(program, activation, customFunctionTable) {
     if (n > 0 && activation != null) {
       for (let i = 0; i < n; i++) vars[i] = activation[varTable[i]]
     }
+    hwOut = _hwCarrier
   } else {
     stack = new Array(requiredCapacity)
     for (let i = 0; i < requiredCapacity; i++) stack[i] = undefined
@@ -1175,22 +1190,29 @@ export function evaluate(program, activation, customFunctionTable) {
     } else {
       for (let i = 0; i < vars.length; i++) vars[i] = undefined
     }
+    // Re-entrant calls get their own carrier — negligible (24 B) and keeps
+    // frames independent of the module-level pool state.
+    hwOut = new Int32Array(1)
   }
+  hwOut[0] = -1
 
   try {
-    return evaluateDispatch(program, customFunctionTable, stack, uintFlags, vars)
+    return evaluateDispatch(program, customFunctionTable, stack, uintFlags, vars, hwOut)
   } finally {
     if (fromPool) {
-      // Clear slot references so evaluate-scoped intermediates are eligible
-      // for GC — otherwise pooled slots would pin them until overwritten.
-      for (let i = 0; i < stack.length; i++) stack[i] = undefined
+      // Clear only the slots dispatch actually touched so evaluate-scoped
+      // intermediates are eligible for GC. Slots above hw were never written
+      // by this call, so the pool invariant "slots > hw are undefined" holds.
+      const hw = hwOut[0]
+      for (let i = 0; i <= hw; i++) stack[i] = undefined
       for (let i = 0; i < n; i++) vars[i] = undefined
+      _lastHw = hw
       pooledInUse = false
     }
   }
 }
 
-function evaluateDispatch(program, customFunctionTable, stack, uintFlags, vars) {
+function evaluateDispatch(program, customFunctionTable, stack, uintFlags, vars, hwOut) {
   const { consts, constUintFlags, opcodes, operands } = program
   const len = opcodes.length
 
@@ -1203,7 +1225,14 @@ function evaluateDispatch(program, customFunctionTable, stack, uintFlags, vars) 
   let accu = null
   let iterElem = undefined
 
+  // Watermark tracks the highest sp seen this call. Updated once at the loop
+  // header so we cannot miss an sp-modification site; kept as a local so JSC
+  // can register-promote it (module-level `let` would spill to the environment
+  // record on every touch).
+  let maxSp = -1
+
   while (pc < len) {
+    if (sp > maxSp) maxSp = sp
     const op = opcodes[pc]
     const operand = operands[pc]
     pc++
@@ -1236,6 +1265,10 @@ function evaluateDispatch(program, customFunctionTable, stack, uintFlags, vars) 
 
       case OP.RETURN: {
         const result = stack[sp]
+        // Sync watermark before returning — RETURN leaves via return, not
+        // the loop header, so the final sp update would otherwise be missed.
+        if (sp > maxSp) maxSp = sp
+        hwOut[0] = maxSp
         if (isError(result)) throw new EvaluationError(result.message, result._instrIndex >= 0 ? result._instrIndex : pc - 1)
         return result
       }
@@ -1665,6 +1698,8 @@ function evaluateDispatch(program, customFunctionTable, stack, uintFlags, vars) 
 
   // Should not reach here if bytecode ends with RETURN
   const result = stack[sp]
+  if (sp > maxSp) maxSp = sp
+  hwOut[0] = maxSp
   if (isError(result)) throw new EvaluationError(result.message, result._instrIndex >= 0 ? result._instrIndex : pc - 1)
   return result
 }
