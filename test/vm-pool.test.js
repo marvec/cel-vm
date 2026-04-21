@@ -131,3 +131,58 @@ describe('VM stack pool', () => {
     }
   })
 })
+
+describe('VM vars pool', () => {
+  it('different programs do not leak vars across evaluations', () => {
+    // Pool must correctly re-fill when a smaller varTable follows a larger
+    // one (slots [n..prior-n) would still hold stale values if finally
+    // didn't clear them; a follow-up with activation=null would leak).
+    const bc1 = compile('x + y')
+    const bc2 = compile('a + b + c + d + e')
+    assert.equal(evaluate(bc1, { x: 1n, y: 2n }), 3n)
+    assert.equal(evaluate(bc2, { a: 1n, b: 2n, c: 3n, d: 4n, e: 5n }), 15n)
+    // Pool reused, grown capacity from bc2; re-fill from bc1's activation.
+    assert.equal(evaluate(bc1, { x: 10n, y: 20n }), 30n)
+  })
+
+  it('re-entrant evaluate with different activation returns correct results', () => {
+    // Inner call takes the fallback (non-pooled) vars path because
+    // pooledInUse === true from the outer call. Both must read their own
+    // activation cleanly.
+    const innerBc = compile('y + 1')
+    const env = new Environment()
+      .registerFunction('inner', 1, (x) => evaluate(innerBc, { y: x }))
+    assert.equal(env.run('inner(z)', { z: 5n }), 6n)
+  })
+
+  it('null activation yields undefined vars and does not leak prior values', () => {
+    // After evaluate(bc, {x:42n}) the pool's slot 0 is cleared to undefined
+    // in the finally. A follow-up evaluate(bc, null) must skip the fill
+    // loop and still see undefined (not the prior 42n).
+    const bc = compile('x')
+    assert.equal(evaluate(bc, { x: 42n }), 42n)
+    assert.equal(evaluate(bc, null), undefined)
+  })
+
+  it('heap refs in activation are released after evaluate', async () => {
+    if (typeof Bun === 'undefined' || typeof Bun.gc !== 'function') {
+      return  // deterministic GC only on Bun
+    }
+    const bc = compile('size(l)')
+    let big = new Array(5000)
+    for (let i = 0; i < 5000; i++) big[i] = BigInt(i)
+    const ref = new WeakRef(big)
+    assert.equal(evaluate(bc, { l: big }), 5000n)
+    big = null
+    // Run a second evaluation so pool finally overwrites the vars slot.
+    assert.equal(evaluate(compile('1 + 2')), 3n)
+    Bun.gc(true)
+    await new Promise(r => setTimeout(r, 10))
+    Bun.gc(true)
+    assert.equal(
+      ref.deref(),
+      undefined,
+      'pooled vars retained a reference past evaluate() — GC pinned'
+    )
+  })
+})
