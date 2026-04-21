@@ -1080,6 +1080,25 @@ let pooledStack = (() => {
 let pooledUintFlags = new Uint8Array(STACK_INITIAL_CAPACITY)
 let pooledInUse = false
 
+// Pooled activation vars array. Grows monotonically to the largest varTable
+// seen; re-entrant calls take a fresh alloc so the outer call's slots stay
+// intact. Gated by the same `pooledInUse` flag as the stack pool — they
+// check out and return together.
+//
+// A separate sentinel for 0-var programs was tried and regressed list-heavy
+// benchmarks ~20%: its PACKED_SMI_ELEMENTS kind differs from pooledVars'
+// HOLEY kind, which polymorphises the dispatch function's `vars` parameter
+// shape across calls. Using pooledVars even for 0-var programs keeps the
+// parameter shape stable. LOAD_VAR is never emitted for 0-var programs,
+// so no read of `vars` actually fires.
+const VARS_INITIAL_CAPACITY = 8
+
+let pooledVars = (() => {
+  const a = new Array(VARS_INITIAL_CAPACITY)
+  for (let i = 0; i < VARS_INITIAL_CAPACITY; i++) a[i] = undefined
+  return a
+})()
+
 // Watermark carrier: dispatch writes its max sp here so evaluate()'s finally
 // knows how many slots to clear. Reused across non-re-entrant calls; re-entrant
 // calls allocate their own so each frame has private state.
@@ -1112,7 +1131,9 @@ export function evaluate(program, activation, customFunctionTable) {
   const requiredCapacity = len > STACK_MAX_CAPACITY
     ? STACK_MAX_CAPACITY
     : (len < STACK_MIN_CAPACITY ? STACK_MIN_CAPACITY : len)
-  let stack, uintFlags
+  const varTable = program.varTable
+  const n = varTable.length
+  let stack, uintFlags, vars
 
   let hwOut
   if (fromPool) {
@@ -1139,11 +1160,36 @@ export function evaluate(program, activation, customFunctionTable) {
     }
     stack = pooledStack
     uintFlags = pooledUintFlags
+
+    if (pooledVars.length < n) {
+      let newCap = pooledVars.length
+      while (newCap < n) newCap *= 2
+      const grown = new Array(newCap)
+      for (let i = 0; i < newCap; i++) grown[i] = undefined
+      pooledVars = grown
+    }
+    vars = pooledVars
+    // Skip fill when activation is null — the prior call's finally cleared
+    // slots [0..prior-n) to undefined, and any slots beyond that stay
+    // undefined from init. LOAD_VAR correctly reads undefined either way.
+    if (n > 0 && activation != null) {
+      for (let i = 0; i < n; i++) vars[i] = activation[varTable[i]]
+    }
     hwOut = _hwCarrier
   } else {
     stack = new Array(requiredCapacity)
     for (let i = 0; i < requiredCapacity; i++) stack[i] = undefined
     uintFlags = new Uint8Array(requiredCapacity)
+
+    // Re-entrant path: fresh vars array. Pre-fill with undefined so the
+    // element kind matches pooledVars (HOLEY) — avoids polymorphising the
+    // dispatch function's `vars` parameter shape.
+    vars = new Array(n > 0 ? n : VARS_INITIAL_CAPACITY)
+    if (n > 0 && activation != null) {
+      for (let i = 0; i < n; i++) vars[i] = activation[varTable[i]]
+    } else {
+      for (let i = 0; i < vars.length; i++) vars[i] = undefined
+    }
     // Re-entrant calls get their own carrier — negligible (24 B) and keeps
     // frames independent of the module-level pool state.
     hwOut = new Int32Array(1)
@@ -1151,7 +1197,7 @@ export function evaluate(program, activation, customFunctionTable) {
   hwOut[0] = -1
 
   try {
-    return evaluateDispatch(program, activation, customFunctionTable, stack, uintFlags, hwOut)
+    return evaluateDispatch(program, customFunctionTable, stack, uintFlags, vars, hwOut)
   } finally {
     if (fromPool) {
       // Clear only the slots dispatch actually touched so evaluate-scoped
@@ -1159,21 +1205,16 @@ export function evaluate(program, activation, customFunctionTable) {
       // by this call, so the pool invariant "slots > hw are undefined" holds.
       const hw = hwOut[0]
       for (let i = 0; i <= hw; i++) stack[i] = undefined
+      for (let i = 0; i < n; i++) vars[i] = undefined
       _lastHw = hw
       pooledInUse = false
     }
   }
 }
 
-function evaluateDispatch(program, activation, customFunctionTable, stack, uintFlags, hwOut) {
-  const { consts, constUintFlags, varTable, opcodes, operands } = program
+function evaluateDispatch(program, customFunctionTable, stack, uintFlags, vars, hwOut) {
+  const { consts, constUintFlags, opcodes, operands } = program
   const len = opcodes.length
-
-  // Build activation array (string → index resolved at compile time)
-  const vars = new Array(varTable.length)
-  for (let i = 0; i < varTable.length; i++) {
-    vars[i] = activation != null ? activation[varTable[i]] : undefined
-  }
 
   let sp = -1
 
