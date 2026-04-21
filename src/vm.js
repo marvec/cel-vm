@@ -1116,7 +1116,7 @@ const IDX_ACCU      = 0xFFFF
 /**
  * Evaluate encoded bytecode against an activation object.
  *
- * @param {object} program   - decoded program: { consts, constUintFlags, varTable, opcodes, operands }
+ * @param {object} program   - decoded program: { consts, constUintFlags, hasUintConsts, varTable, opcodes, operands }
  * @param {object} activation - map of variable name → value
  * @returns {*} the result value
  */
@@ -1124,9 +1124,17 @@ export function evaluate(program, activation, customFunctionTable) {
   // Check out pooled buffers unless we're re-entrant. Each instruction pushes
   // at most one slot, so opcodes.length upper-bounds max sp. Grow the pool
   // once at entry if needed — the hot loop stays free of bounds checks. The
-  // dispatch itself lives in evaluateDispatch() to keep this function's
-  // try/finally from pessimising the hot loop.
+  // dispatch itself lives in evaluateDispatch() / evaluateDispatchNoUint()
+  // to keep this function's try/finally from pessimising the hot loop.
+  //
+  // Programs whose const pool contains no uint64 literals cannot reach any
+  // site that writes a `1` into uintFlags (PUSH_CONST and arithmetic
+  // propagation are the only sources). evaluateDispatchNoUint is a stripped
+  // variant that omits the uintFlags reads/writes entirely — saving three
+  // to five typed-array accesses per arithmetic op plus the PUSH_CONST flag
+  // copy.
   const fromPool = !pooledInUse
+  const useFastPath = !program.hasUintConsts
   const len = program.opcodes.length
   const requiredCapacity = len > STACK_MAX_CAPACITY
     ? STACK_MAX_CAPACITY
@@ -1145,13 +1153,16 @@ export function evaluate(program, activation, customFunctionTable) {
       const grown = new Array(newCap)
       for (let i = 0; i < newCap; i++) grown[i] = undefined
       pooledStack = grown
+      // Both buffers must resize together: a later slow-path call at depth
+      // N requires uintFlags.length >= N, even if this call is the fast path.
       pooledUintFlags = new Uint8Array(newCap)
       _lastHw = -1
-    } else if (_lastHw >= 0) {
+    } else if (!useFastPath && _lastHw >= 0) {
       // LOAD_VAR and other opcodes push without setting uintFlags[sp]; they
       // rely on the slot being 0. Reset only the range touched by the prior
       // call — slots above _lastHw are still 0 by induction (only PUSH_CONST
       // writes a non-zero flag, and it only writes at the live sp).
+      // Fast-path calls never read uintFlags, so we can skip this entirely.
       if (_lastHw < 4) {
         for (let i = 0; i <= _lastHw; i++) pooledUintFlags[i] = 0
       } else {
@@ -1197,6 +1208,9 @@ export function evaluate(program, activation, customFunctionTable) {
   hwOut[0] = -1
 
   try {
+    if (useFastPath) {
+      return evaluateDispatchNoUint(program, customFunctionTable, stack, vars, hwOut)
+    }
     return evaluateDispatch(program, customFunctionTable, stack, uintFlags, vars, hwOut)
   } finally {
     if (fromPool) {
@@ -1316,48 +1330,58 @@ function evaluateDispatch(program, customFunctionTable, stack, uintFlags, vars, 
       case OP.ADD: {
         const bIsUint = uintFlags[sp]
         const b = stack[sp--]; const aIsUint = uintFlags[sp]; const a = stack[sp]
-        if (aIsUint && bIsUint && isInt(a) && isInt(b)) {
+        const bothUint = aIsUint && bIsUint
+        if (bothUint && isInt(a) && isInt(b)) {
           stack[sp] = checkUintOverflow(a + b)
         } else {
           stack[sp] = celAdd(a, b)
         }
-        uintFlags[sp] = aIsUint && bIsUint ? 1 : 0
+        if (bothUint) uintFlags[sp] = 1
+        else uintFlags[sp] = 0
         break
       }
       case OP.SUB: {
         const bIsUint = uintFlags[sp]
         const b = stack[sp--]; const aIsUint = uintFlags[sp]; const a = stack[sp]
-        if (aIsUint && bIsUint && isInt(a) && isInt(b)) {
+        const bothUint = aIsUint && bIsUint
+        if (bothUint && isInt(a) && isInt(b)) {
           stack[sp] = checkUintOverflow(a - b)
         } else {
           stack[sp] = celSub(a, b)
         }
-        uintFlags[sp] = aIsUint && bIsUint ? 1 : 0
+        if (bothUint) uintFlags[sp] = 1
+        else uintFlags[sp] = 0
         break
       }
       case OP.MUL: {
         const bIsUint = uintFlags[sp]
         const b = stack[sp--]; const aIsUint = uintFlags[sp]; const a = stack[sp]
-        if (aIsUint && bIsUint && isInt(a) && isInt(b)) {
+        const bothUint = aIsUint && bIsUint
+        if (bothUint && isInt(a) && isInt(b)) {
           stack[sp] = checkUintOverflow(a * b)
         } else {
           stack[sp] = celMul(a, b)
         }
-        uintFlags[sp] = aIsUint && bIsUint ? 1 : 0
+        if (bothUint) uintFlags[sp] = 1
+        else uintFlags[sp] = 0
         break
       }
       case OP.DIV: {
         const bIsUint = uintFlags[sp]
         const b = stack[sp--]; const aIsUint = uintFlags[sp]; const a = stack[sp]
         stack[sp] = celDiv(a, b)
-        uintFlags[sp] = aIsUint && bIsUint ? 1 : 0
+        const bothUint = aIsUint && bIsUint
+        if (bothUint) uintFlags[sp] = 1
+        else uintFlags[sp] = 0
         break
       }
       case OP.MOD: {
         const bIsUint = uintFlags[sp]
         const b = stack[sp--]; const aIsUint = uintFlags[sp]; const a = stack[sp]
         stack[sp] = celMod(a, b)
-        uintFlags[sp] = aIsUint && bIsUint ? 1 : 0
+        const bothUint = aIsUint && bIsUint
+        if (bothUint) uintFlags[sp] = 1
+        else uintFlags[sp] = 0
         break
       }
       case OP.POW: {
@@ -1697,6 +1721,450 @@ function evaluateDispatch(program, customFunctionTable, stack, uintFlags, vars, 
   }
 
   // Should not reach here if bytecode ends with RETURN
+  const result = stack[sp]
+  if (sp > maxSp) maxSp = sp
+  hwOut[0] = maxSp
+  if (isError(result)) throw new EvaluationError(result.message, result._instrIndex >= 0 ? result._instrIndex : pc - 1)
+  return result
+}
+
+// evaluateDispatchNoUint: specialised dispatch for programs whose const pool
+// contains no uint64 literals. Relies on the invariant that the ONLY source
+// of a `1` in uintFlags is PUSH_CONST reading from a constUintFlags[i] === 1
+// entry; every other write is either `0` or an AND-propagation. If a future
+// opcode ever sets uintFlags[sp] = 1 from something other than a uint const,
+// extend hasUintConsts detection in decode() to cover it — or route all
+// traffic through evaluateDispatch.
+function evaluateDispatchNoUint(program, customFunctionTable, stack, vars, hwOut) {
+  const { consts, opcodes, operands } = program
+  const len = opcodes.length
+
+  let sp = -1
+  let pc = 0
+  let accu = null
+  let iterElem = undefined
+  let maxSp = -1
+
+  while (pc < len) {
+    if (sp > maxSp) maxSp = sp
+    const op = opcodes[pc]
+    const operand = operands[pc]
+    pc++
+
+    switch (op) {
+      // ── Push / Load ───────────────────────────────────────────────────────
+      case OP.PUSH_CONST: {
+        stack[++sp] = consts[operand]
+        break
+      }
+
+      case OP.LOAD_VAR: {
+        const idx = operand
+        if (idx === IDX_ITER_ELEM) {
+          stack[++sp] = iterElem
+        } else if (idx === IDX_ACCU) {
+          stack[++sp] = accu
+        } else {
+          stack[++sp] = vars[idx]
+        }
+        break
+      }
+
+      case OP.POP: {
+        sp--
+        break
+      }
+
+      case OP.RETURN: {
+        const result = stack[sp]
+        if (sp > maxSp) maxSp = sp
+        hwOut[0] = maxSp
+        if (isError(result)) throw new EvaluationError(result.message, result._instrIndex >= 0 ? result._instrIndex : pc - 1)
+        return result
+      }
+
+      // ── Jumps ─────────────────────────────────────────────────────────────
+      case OP.JUMP: {
+        pc += operand
+        break
+      }
+
+      case OP.JUMP_IF_FALSE: {
+        const cond = stack[sp--]
+        if (cond === false) pc += operand
+        else if (!isBool(cond) && !isError(cond)) throw new EvaluationError(`JUMP_IF_FALSE requires bool, got ${celTypeName(cond)}`, pc - 1)
+        break
+      }
+
+      case OP.JUMP_IF_TRUE: {
+        const cond = stack[sp--]
+        if (cond === true) pc += operand
+        else if (!isBool(cond) && !isError(cond)) throw new EvaluationError(`JUMP_IF_TRUE requires bool, got ${celTypeName(cond)}`, pc - 1)
+        break
+      }
+
+      case OP.JUMP_IF_FALSE_K: {
+        const cond = stack[sp]
+        if (cond === false) pc += operand
+        else if (!isBool(cond) && !isError(cond)) stack[sp] = celError(`no such overload`)
+        break
+      }
+
+      case OP.JUMP_IF_TRUE_K: {
+        const cond = stack[sp]
+        if (cond === true) pc += operand
+        else if (!isBool(cond) && !isError(cond)) stack[sp] = celError(`no such overload`)
+        break
+      }
+
+      // ── Arithmetic (no uint path — program has no uint consts) ────────────
+      case OP.ADD: {
+        const b = stack[sp--]; const a = stack[sp]
+        stack[sp] = celAdd(a, b)
+        break
+      }
+      case OP.SUB: {
+        const b = stack[sp--]; const a = stack[sp]
+        stack[sp] = celSub(a, b)
+        break
+      }
+      case OP.MUL: {
+        const b = stack[sp--]; const a = stack[sp]
+        stack[sp] = celMul(a, b)
+        break
+      }
+      case OP.DIV: {
+        const b = stack[sp--]; const a = stack[sp]
+        stack[sp] = celDiv(a, b)
+        break
+      }
+      case OP.MOD: {
+        const b = stack[sp--]; const a = stack[sp]
+        stack[sp] = celMod(a, b)
+        break
+      }
+      case OP.POW: {
+        const b = stack[sp--]; const a = stack[sp]
+        stack[sp] = celPow(a, b)
+        break
+      }
+      case OP.NEG: {
+        stack[sp] = celNeg(stack[sp])
+        break
+      }
+
+      // ── Comparison ────────────────────────────────────────────────────────
+      case OP.EQ: {
+        const b = stack[sp--]; const a = stack[sp]
+        stack[sp] = celEq(a, b)
+        break
+      }
+      case OP.NEQ: {
+        const b = stack[sp--]; const a = stack[sp]
+        stack[sp] = !celEq(a, b)
+        break
+      }
+      case OP.LT: {
+        const b = stack[sp--]; const a = stack[sp]
+        stack[sp] = celLt(a, b)
+        break
+      }
+      case OP.LE: {
+        const b = stack[sp--]; const a = stack[sp]
+        stack[sp] = celLe(a, b)
+        break
+      }
+      case OP.GT: {
+        const b = stack[sp--]; const a = stack[sp]
+        stack[sp] = celLt(b, a)
+        break
+      }
+      case OP.GE: {
+        const b = stack[sp--]; const a = stack[sp]
+        stack[sp] = celLe(b, a)
+        break
+      }
+
+      // ── Logic ─────────────────────────────────────────────────────────────
+      case OP.NOT: {
+        const v = stack[sp]
+        if (isError(v)) break
+        if (!isBool(v)) { stack[sp] = celError(`! requires bool, got ${celTypeName(v)}`); break }
+        stack[sp] = !v
+        break
+      }
+      case OP.XOR: {
+        const b = stack[sp--]; const a = stack[sp]
+        if (isError(a)) break
+        if (isError(b)) { stack[sp] = b; break }
+        if (!isInt(a) || !isInt(b)) { stack[sp] = celError(`^ requires int, got ${celTypeName(a)} ^ ${celTypeName(b)}`); break }
+        stack[sp] = a ^ b
+        break
+      }
+
+      // ── Collections ───────────────────────────────────────────────────────
+      case OP.BUILD_LIST: {
+        const n = operand
+        const list = new Array(n)
+        for (let i = n - 1; i >= 0; i--) list[i] = stack[sp--]
+        let hasOpt = false
+        for (let i = 0; i < n; i++) { if (isOpt(list[i])) { hasOpt = true; break } }
+        if (hasOpt) {
+          const filtered = []
+          for (let i = 0; i < n; i++) {
+            const el = list[i]
+            if (isOpt(el)) {
+              if (el.value !== undefined) filtered.push(el.value)
+            } else {
+              filtered.push(el)
+            }
+          }
+          stack[++sp] = filtered
+        } else {
+          stack[++sp] = list
+        }
+        break
+      }
+      case OP.BUILD_MAP: {
+        const n = operand
+        const map = new Map()
+        const base = sp - n * 2 + 1
+        for (let i = 0; i < n; i++) {
+          map.set(stack[base + i * 2], stack[base + i * 2 + 1])
+        }
+        sp = base
+        stack[sp] = map
+        break
+      }
+      case OP.INDEX: {
+        const idx = stack[sp--]; const obj = stack[sp]
+        if (isError(obj)) { break }
+        if (isError(idx)) { stack[sp] = idx; break }
+        if (isList(obj)) {
+          const i = typeof idx === 'bigint' ? Number(idx) : idx
+          if (typeof i !== 'number' || !Number.isInteger(i)) { stack[sp] = celError(`invalid index type: ${celTypeName(idx)}`); break }
+          if (i < 0 || i >= obj.length) { stack[sp] = celError(`index out of bounds: ${i}`); break }
+          stack[sp] = obj[i]
+        } else if (isMap(obj)) {
+          let found = false
+          for (const [k, v] of obj) {
+            if (celEq(k, idx) === true) { stack[sp] = v; found = true; break }
+          }
+          if (!found) stack[sp] = celError(`no such key: '${idx}'`)
+        } else if (isStr(obj)) {
+          const i = typeof idx === 'bigint' ? Number(idx) : idx
+          const len = codePointLen(obj)
+          if (i < 0 || i >= len) { stack[sp] = celError(`index out of bounds: ${i}`); break }
+          stack[sp] = codePointCharAt(obj, i)
+        } else {
+          stack[sp] = celError(`cannot index ${celTypeName(obj)}`)
+        }
+        break
+      }
+      case OP.IN: {
+        const container = stack[sp--]; const val = stack[sp]
+        stack[sp] = celIn(val, container)
+        break
+      }
+
+      // ── Field access ──────────────────────────────────────────────────────
+      case OP.SELECT: {
+        stack[sp] = celSelect(stack[sp], consts[operand])
+        break
+      }
+      case OP.HAS_FIELD: {
+        stack[sp] = celHasField(stack[sp], consts[operand])
+        break
+      }
+
+      // ── Function call ─────────────────────────────────────────────────────
+      case OP.CALL: {
+        const builtinId = operand >>> 16
+        const argc = operand & 0xFFFF
+        const result = builtinId >= 128
+          ? callCustom(builtinId, argc, stack, sp, customFunctionTable)
+          : callBuiltin(builtinId, argc, stack, sp)
+        sp -= argc - 1
+        stack[sp] = result
+        break
+      }
+
+      case OP.SIZE: {
+        stack[sp] = celSize(stack[sp])
+        break
+      }
+
+      // ── Comprehension ─────────────────────────────────────────────────────
+      case OP.ITER_INIT: {
+        const list = stack[sp]
+        if (isError(list)) break
+        if (!isList(list) && !isMap(list)) {
+          stack[sp] = celError(`cannot iterate over ${celTypeName(list)}`); break
+        }
+        const items = isMap(list) ? [...list.keys()] : list
+        stack[sp] = { __iter: true, items, idx: 0 }
+        break
+      }
+
+      case OP.ITER_NEXT: {
+        const offset = operand
+        const iter = stack[sp]
+        if (iter.idx >= iter.items.length) {
+          pc += offset
+        } else {
+          iterElem = iter.items[iter.idx++]
+          stack[++sp] = iterElem
+        }
+        break
+      }
+
+      case OP.ITER_POP: {
+        sp--
+        break
+      }
+
+      case OP.ACCUM_PUSH: {
+        const constIdx = operand
+        if (constIdx === 0xFFFF) {
+          accu = stack[sp--]
+        } else {
+          accu = consts[constIdx]
+          if (isList(accu)) accu = [...accu]
+          else if (isMap(accu)) accu = new Map(accu)
+        }
+        break
+      }
+
+      case OP.ACCUM_SET: {
+        accu = stack[sp--]
+        break
+      }
+
+      // ── Optional types ────────────────────────────────────────────────────
+      case OP.OPT_NONE: {
+        stack[++sp] = { __celOptional: true, value: undefined }
+        break
+      }
+      case OP.OPT_OF: {
+        const v = stack[sp]
+        stack[sp] = { __celOptional: true, value: v }
+        break
+      }
+      case OP.OPT_OR_VALUE: {
+        const def = stack[sp--]
+        const opt = stack[sp]
+        if (isOpt(opt)) {
+          stack[sp] = opt.value === undefined ? def : opt.value
+        } else {
+          stack[sp] = opt
+        }
+        break
+      }
+      case OP.OPT_SELECT: {
+        const field = consts[operand]
+        const obj = stack[sp]
+        if (isOpt(obj) && obj.value === undefined) {
+          // none stays none
+        } else {
+          const target = isOpt(obj) ? obj.value : obj
+          if (DANGEROUS_FIELDS.has(field)) {
+            stack[sp] = { __celOptional: true, value: undefined }
+          } else if (isMap(target) && target.has(field)) {
+            stack[sp] = { __celOptional: true, value: target.get(field) }
+          } else if (target !== null && typeof target === 'object' && field in target) {
+            stack[sp] = { __celOptional: true, value: target[field] }
+          } else {
+            stack[sp] = { __celOptional: true, value: undefined }
+          }
+        }
+        break
+      }
+      case OP.OPT_CHAIN: {
+        const offset = operand
+        const top = stack[sp]
+        if (isOpt(top) && top.value === undefined) {
+          pc += offset
+        }
+        break
+      }
+
+      case OP.OPT_INDEX: {
+        const key = stack[sp--]
+        const obj = stack[sp]
+        if (isOpt(obj) && obj.value === undefined) {
+          // none stays none
+        } else {
+          const target = isOpt(obj) ? obj.value : obj
+          if (isMap(target)) {
+            let found = false
+            for (const [k, v] of target) {
+              if (celEq(k, key) === true) { stack[sp] = { __celOptional: true, value: v }; found = true; break }
+            }
+            if (!found) stack[sp] = { __celOptional: true, value: undefined }
+          } else if (Array.isArray(target)) {
+            const i = typeof key === 'bigint' ? Number(key) : key
+            if (typeof i === 'number' && Number.isInteger(i) && i >= 0 && i < target.length) {
+              stack[sp] = { __celOptional: true, value: target[i] }
+            } else {
+              stack[sp] = { __celOptional: true, value: undefined }
+            }
+          } else {
+            stack[sp] = { __celOptional: true, value: undefined }
+          }
+        }
+        break
+      }
+
+      case OP.OPT_OF_NON_ZERO: {
+        const v = stack[sp]
+        const isZero = v === null || v === false || v === 0n || v === 0 || v === 0.0 || v === '' ||
+          (v instanceof Uint8Array && v.length === 0) ||
+          (Array.isArray(v) && v.length === 0) ||
+          (isMap(v) && v.size === 0)
+        stack[sp] = { __celOptional: true, value: isZero ? undefined : v }
+        break
+      }
+      case OP.OPT_HAS_VALUE: {
+        const v = stack[sp]
+        if (isError(v)) break
+        if (isOpt(v)) {
+          stack[sp] = v.value !== undefined
+        } else {
+          stack[sp] = true
+        }
+        break
+      }
+
+      // ── Commutative logical operators ─────────────────────────────────────
+      case OP.LOGICAL_AND: {
+        const rhs = stack[sp--]
+        const lhs = stack[sp]
+        if (lhs === false || rhs === false) { stack[sp] = false }
+        else if (lhs === true && rhs === true) { stack[sp] = true }
+        else if (lhs === true) { stack[sp] = rhs }
+        else if (rhs === true) { stack[sp] = lhs }
+        else { stack[sp] = isError(lhs) ? lhs : rhs }
+        break
+      }
+      case OP.LOGICAL_OR: {
+        const rhs = stack[sp--]
+        const lhs = stack[sp]
+        if (lhs === true || rhs === true) { stack[sp] = true }
+        else if (lhs === false && rhs === false) { stack[sp] = false }
+        else if (lhs === false) { stack[sp] = rhs }
+        else if (rhs === false) { stack[sp] = lhs }
+        else { stack[sp] = isError(lhs) ? lhs : rhs }
+        break
+      }
+
+      default:
+        throw new EvaluationError(`unknown opcode: ${op}`, pc - 1)
+    }
+    if (sp >= 0 && isError(stack[sp]) && stack[sp]._instrIndex < 0) {
+      stack[sp]._instrIndex = pc - 1
+    }
+  }
+
   const result = stack[sp]
   if (sp > maxSp) maxSp = sp
   hwOut[0] = maxSp
